@@ -1,0 +1,8 @@
+team115_lustre
+*.swp
+*.swo
+*.Rdata
+*.Rhistory
+.output
+.DS_Store
+._.DS_Store
