@@ -15,27 +15,29 @@ library(circlize)
 # Read in counts matrix
 counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_clonotype.csv", header = T)
 # counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_vj.csv", header = T)
+# counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_v.csv", header = T)
 clonotype.names <- unlist(counts.clonotype[, 1, with=F])
 counts.clonotype <- counts.clonotype[, -1, with=F]
 rownames(counts.clonotype) <- clonotype.names
-
+#
 # Read in sample matrix
 sampleInfo <- fread("../team115_lustre/1_analyse_clonotypes/sample_info.csv")
 sampleInfo <- sampleInfo[order(sampleInfo$"Tag Index")]
 sampleInfo <- sampleInfo[, patient_code := as.factor(patient_code)]
 sampleInfo <- sampleInfo[, day := as.factor(day)]
-sampleInfo <- sampleInfo[sampleInfo$"Tag Index" != "20", ]
 sampleInfo[, group := paste(day, cell_type, sep=".")]
 sampleInfo[, id := paste(Sample_name, patient_code, day, cell_type, sep=".")]
 colnames(counts.clonotype) <- sampleInfo$id
-
+#
 # Create DGEList and normalise counts by library size
 dge.clonotype <- DGEList(counts=counts.clonotype)
 rownames(dge.clonotype) <- rownames(counts.clonotype)
 dge.clonotype <- calcNormFactors(dge.clonotype)
-
+#
 # Filter out clonotypes with low counts
 dge.clonotype.filtered <- dge.clonotype[rowSums(dge.clonotype$counts >= 2) >= 2,  , keep.lib.sizes=F]
+# dge.clonotype.filtered <- dge.clonotype[colnames(dge.clonotype.filtered) != "LEA_S20.1019.63.PBMCs", ]
+
 plotMDS(dge.clonotype.filtered, labels=paste(sampleInfo$day, sampleInfo$cell_type, sep="_"), col=as.numeric(sampleInfo$patient_code))
 
 # Since we need to make comparisons both within and between subjects, it is necessary to treat patient_code as a random effect.
@@ -50,7 +52,7 @@ cor.clonotype <- duplicateCorrelation(v.clonotype, design, block=sampleInfo$pati
 
 # Fit lm
 fit.clonotype <- lmFit(v.clonotype, design, block=sampleInfo$patient_code, correlation=cor.clonotype$consensus.correlation)
-
+#
 # Setup and compute contrasts
 cm.clonotype <- makeContrasts(
                               group63.MBC-group0.MBC,
@@ -64,27 +66,16 @@ fit2.clonotype <- eBayes(fit2.clonotype)
 # Test for DE
 summary(decideTests(fit2.clonotype, p.value=0.05))
 
-topTable(fit2.clonotype, coef="group140.MBC - group0.MBC")
+topTable(fit2.clonotype, coef="group140.MBC - group0.PBMCs")
 
-counts.clonotype[rownames(counts.clonotype) == "IGHV6-1.IGHJ5"]
-
+(dge.clonotype$counts)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)]
+cpm(dge.clonotype)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)]
+(dge.clonotype$counts)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".140.PBMCs", colnames(dge.clonotype), fixed=T)]
+cpm(dge.clonotype)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".140.PBMCs", colnames(dge.clonotype), fixed=T)]
 
 #
 # Paired t-test for proportions
 #
-
-For each
-
-counts.clonotype[, sampleInfo[day == 0 & cell_type == "MBC", Sample_name], with=F]
-
-counts.clonotype[, sampleInfo[day == 140 & cell_type == "MBC", Sample_name], with=F]
-
-pairwise.prop.test(x, n, p.adjust.method = p.adjust.methods, ...)
-
-
-cpm(dge.clonotype)
-
-
 
 #
 # Diversity of repertoire
@@ -95,6 +86,9 @@ summary(aov(gini_i ~ cell_type*day, sampleInfo))
 summary(lmer(gini_i ~ cell_type+day + (1 | patient_code), sampleInfo))
 
 (mixed(gini_i ~ cell_type*day + (1|patient_code), sampleInfo))
+
+# TODO try out hill indices
+# Plot hill curves using change o
 
 #
 # 
