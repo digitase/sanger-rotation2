@@ -13,8 +13,8 @@ library(lme4)
 library(circlize)
 
 # Read in counts matrix
-counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_clonotype.csv", header = T)
-# counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_vj.csv", header = T)
+# counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_clonotype.csv", header = T)
+counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_vj.csv", header = T)
 # counts.clonotype <- fread("../team115_lustre/1_analyse_clonotypes/count_v.csv", header = T)
 clonotype.names <- unlist(counts.clonotype[, 1, with=F])
 counts.clonotype <- counts.clonotype[, -1, with=F]
@@ -27,15 +27,19 @@ sampleInfo <- sampleInfo[, patient_code := as.factor(patient_code)]
 sampleInfo <- sampleInfo[, day := as.factor(day)]
 sampleInfo[, group := paste(day, cell_type, sep=".")]
 sampleInfo[, id := paste(Sample_name, patient_code, day, cell_type, sep=".")]
-colnames(counts.clonotype) <- sampleInfo$id
+colnames(counts.clonotype) <- sampleInfo$Sample_name
 #
 # Create DGEList and normalise counts by library size
 dge.clonotype <- DGEList(counts=counts.clonotype)
 rownames(dge.clonotype) <- rownames(counts.clonotype)
 dge.clonotype <- calcNormFactors(dge.clonotype)
+# Write out normalised counts
+write.csv(cpm(dge.clonotype, log=F, normalised.lib.sizes=T), "../team115_lustre/1_analyse_clonotypes/count_clonotype.cpm_normed.csv")
+colnames(counts.clonotype) <- sampleInfo$id
+colnames(dge.clonotype) <- sampleInfo$id
 #
 # Filter out clonotypes with low counts
-dge.clonotype.filtered <- dge.clonotype[rowSums(dge.clonotype$counts >= 2) >= 2,  , keep.lib.sizes=F]
+dge.clonotype.filtered <- dge.clonotype[rowSums(dge.clonotype$counts >= 2) >= 0,  , keep.lib.sizes=F]
 # dge.clonotype.filtered <- dge.clonotype[colnames(dge.clonotype.filtered) != "LEA_S20.1019.63.PBMCs", ]
 
 plotMDS(dge.clonotype.filtered, labels=paste(sampleInfo$day, sampleInfo$cell_type, sep="_"), col=as.numeric(sampleInfo$patient_code))
@@ -66,16 +70,42 @@ fit2.clonotype <- eBayes(fit2.clonotype)
 # Test for DE
 summary(decideTests(fit2.clonotype, p.value=0.05))
 
-topTable(fit2.clonotype, coef="group140.MBC - group0.PBMCs")
+topTable(fit2.clonotype, coef="group140.MBC - group0.MBC", n=20)
 
-(dge.clonotype$counts)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)]
-cpm(dge.clonotype)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)]
-(dge.clonotype$counts)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".140.PBMCs", colnames(dge.clonotype), fixed=T)]
-cpm(dge.clonotype)[rownames(dge.clonotype) == "IGHV3-7.IGHJ4.CDR3_len23"][grepl(".140.PBMCs", colnames(dge.clonotype), fixed=T)]
+getCounts <- function(clonotype) {
+    print( (dge.clonotype$counts)[rownames(dge.clonotype) == clonotype][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)] )
+    print( cpm(dge.clonotype)[rownames(dge.clonotype) == clonotype][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)] )
+    print( (dge.clonotype$counts)[rownames(dge.clonotype) == clonotype][grepl(".140.PBMCs", colnames(dge.clonotype), fixed=T)] )
+    print( cpm(dge.clonotype)[rownames(dge.clonotype) == clonotype][grepl(".140.PBMCs", colnames(dge.clonotype), fixed=T)] )
+}
+
+getCounts("IGHV3-7.IGHJ4.CDR3_len23")
+getCounts("IGHV4-38-2.IGHJ5.CDR3_len8")
+getCounts("IGHV4-28.IGHJ5.CDR3_len11")
 
 #
 # Paired t-test for proportions
 #
+
+survivors <- matrix(c(159,1286,142,2029), ncol=2)
+
+prop.test(survivors)
+chisq.test(survivors)
+
+#
+# Barnard test - difference in proportions
+# multinomial for nonfixed margins, too slow.
+#
+
+library(Exact)
+
+exact.test(survivors)
+exact.test(c(159,1286,142,2029), ncol=2)
+
+prop.test(c(159, 12), c(1286, 2029))
+
+foo=matrix(c(159,142,1286,2029), ncol=2)
+exact.test(foo, model="multinomial")
 
 #
 # Diversity of repertoire
@@ -87,17 +117,47 @@ summary(lmer(gini_i ~ cell_type+day + (1 | patient_code), sampleInfo))
 
 (mixed(gini_i ~ cell_type*day + (1|patient_code), sampleInfo))
 
-# TODO try out hill indices
-# Plot hill curves using change o
-
-#
-# 
-#
-
 # Generate adjacency matrix representing strength of relationships between samples
 # Here, the strength of relationship is the number of unique clonotypes in the overlap
 
 adj <- as.matrix(read.csv("../team115_lustre/1_analyse_clonotypes/adj.csv"))
 rownames(adj) <- colnames(adj)
 chordDiagram(adj, symmetric=F, self.link=1)
+
+#
+# IMGT/StatClonotype uses a generic statistical procedure [1] for identifying
+# significant changes in IG and TR differences of proportions of IMGT clonotypes
+# (AA) diversity and expression [5].
+#
+library(IMGTStatClonotype)
+
+data(MID1)
+data(MID2)
+
+MID1<-clonRem(MID1)
+MID2<-clonRem(MID2)
+
+# ...the IMGTstandardized approach allows a clear distinction between 
+# the clonotype diversity (numbers of IMGTclonotypes (AA) perV,Dor J gene), 
+# and the clonotype expression (numbers of sequences assigned, unambiguously, to a given IMGT clonotype (AA) perV,Dor J gene) [16]...
+
+# Numbers of IMGT clonotypes (AA) in the two compared sets from the
+# IMGT/HighV-QUEST output for clonotype diversity
+Ndiv<-clonNumDiv(MID1,MID2)
+# Numbers of IMGT clonotypes (AA) in the two compared sets from the
+# IMGT/HighV-QUEST output for clonotype expression
+Nexp<-clonNumExp(MID1,MID2)
+
+# Significance of the difference in proportions with 95% confidence in-
+# terval (CI) for IMGT clonotype (AA) diversity between two sets from
+# IMGT/HighV-QUEST output
+div<-sigrepDiv(Ndiv,MID1,MID2)
+# Significance of the difference in proportions with 95% confidence in-
+# terval (CI) for IMGT clonotype (AA) expression between two sets from
+# IMGT/HighV-QUEST output
+exp<-sigrepExp(Nexp,MID1,MID2)
+
+diffpropGph(div)$Vgenes
+diffpropGph(exp)$Vgenes
+
 
