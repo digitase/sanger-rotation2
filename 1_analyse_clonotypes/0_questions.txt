@@ -1,0 +1,84 @@
+#
+# # Questions to ask
+# 
+# How is immunity to the vaccine candidate achieved? Due to antibodies... which we detect via:
+# 
+# - V-gene usage
+# - clonotype abundance
+# - mutational frequency
+# 
+# Things:
+# 
+# - V(D)J gene frequencies, Ig isotype usage, and BCR clone size, stratified by timepoint and patient
+# - Look for expansion of clonotypes in day 63 and 140 vs. day 0
+# - Compare expanded clonotypes to known Ab sequences
+# - Look for differences between patients at day 0
+# - Calculate mutational frequencies of clonotypes
+# - Area/bar/parallel coords chart showing expansion of clonotypes (known V genes?) over time
+# - 1 long stream plot showing abundances of clones over time in the 3 individuals
+# 
+# ## Comparison across individuals at pre-prime (day 0)
+# 
+# RH5 and Duffy samples
+# 
+# - Distribution of clonotypes between individuals
+# - How diverse is the repertoire? Gini index?
+# - Run comparison across cell types
+# 
+# ## Clonotypes at early post prime (day 28)
+# 
+# Look for:
+# 
+# - clonotype freq
+# - isotype distribution
+# - mutational freq (1-% identity) vs. IMGT V gene reference
+#     - linear regression of BCR mutational frequency against clonotype V gene status
+#     - mutational freq stratified by isotype
+#     
+# In the compartments:
+# 
+# - For memory cells vs day 0
+# - For plasmablasts vs naive repertoire (IgD/IgM unmutated sequences taken from PBMC samples at Day 0)
+# 
+# - Are expanded/mutated clonotypes the same as the
+#     - known anti-RH5 Ab sequences
+#     - ones observed in AMA1 and Duffy trials
+#     - ones observed in influenza and other infection challenge
+# 
+# ## Clonotypes at early post boost (day 63)
+# 
+# Look for:
+# 
+# - clonotype freq
+# - isotype distribution
+# - mutational freq (1-% identity) vs. IMGT V gene reference
+#     - linear regression of BCR mutational frequency against clonotype V gene status
+#     - mutational freq stratified by isotype
+#     
+# In the compartments:
+# 
+# - For memory cells vs day 0 and day 28
+# - For plasmablasts vs plasmoblasts at day 0 and day 28
+#     - activation of same clonotypes during prime and boost?
+# - For plasmablasts vs naive repertoire at day 0 and day 28
+# - For plasmablasts vs memory repertoire at day 0 and day 28
+#     - recall of memory cells generated at the prime?
+# 
+# - clonotype overlap between 
+# 
+# ## Clonotypes at long term (day 140)
+# 
+# Look for:
+# 
+# - clonotype freq
+# 
+# In the compartments:
+# 
+# - For plasmablasts vs memory repertoire at day 63
+#     - how much of the boost response is detectable in long term memory?
+# 
+# ## Identification of malaria specific mAbs
+# 
+# - Overlap with known anti RH5 mAbs (isolated from day 63), or clonotypes appearing in other infections/vaccinations in the literature
+# - Can we expect cross-reactivity in clonotypes that would affect the inferences based on the BCR repertoire data? 
+#
