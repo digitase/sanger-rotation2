@@ -11,6 +11,9 @@ import math
 import collections
 import seaborn as sns
 import matplotlib_venn
+import scipy
+import statsmodels.api as sm
+import itertools
 
 import imp
 import process_clonotype_data_helpers
@@ -160,45 +163,91 @@ rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffi
 #
 
 clonotypes_expanded = dict()
-for sample_name in rep1_freq.columns:
-    rep1_sample_freq = rep_freq_joined[str(sample_name) + "_rep1"] 
-    rep2_sample_freq = rep_freq_joined[str(sample_name) + "_rep2"] 
+for patient_code in rep1_freq.columns:
+    rep1_sample_freq = rep_freq_joined[str(patient_code) + "_rep1"] 
+    rep2_sample_freq = rep_freq_joined[str(patient_code) + "_rep2"] 
     #
     reject, _, _, _ = prop_test_ztest(
         rep1_sample_freq,
         rep2_sample_freq,
-        alternative="larger",
+        alternative="smaller",
         fdr_alpha=0.05
     )
-    clonotypes_expanded[sample_name] = rep1_sample_freq.index[reject]
+    clonotypes_expanded[patient_code] = rep1_sample_freq.index[reject]
+
+#
+# Detect increases in clonotype mutational frequency
+# t-test for difference in mutational rate per bp
+#
+clonotypes_mut_rate_inc = dict()
+for patient_code in rep1_freq.columns:
+    ps = []
+    clonotypes = []
+    for clonotype in rep1_freq.index:
+        rep1_sample_mut_freqs = rep1.loc[(rep1["VJ-GENE"] == clonotype) & (rep1["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
+        rep2_sample_mut_freqs = rep2.loc[(rep2["VJ-GENE"] == clonotype) & (rep2["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
+        n1 = len(rep1_sample_mut_freqs) 
+        n2 = len(rep2_sample_mut_freqs) 
+        # Ensure at least 2 clones present per clonotype
+        # if n1+n2 > 2 and n1 and n2:
+        if n1 > 1 and n2 > 1:
+            statistic, pvalue = scipy.stats.ttest_ind(
+                np.sqrt(rep1_sample_mut_freqs), 
+                np.sqrt(rep2_sample_mut_freqs), 
+                equal_var=False,
+            )
+            # Find negative test statistics
+            if statistic >= 0: 
+                pvalue = 1.0
+            ps.append(pvalue)
+            clonotypes.append(clonotype)
+    fdrs = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.05)
+    clonotypes_mut_rate_inc[patient_code] = list(itertools.compress(clonotypes, fdrs[0]))
+
+#
+#
+#
 
 # TODO
 # reorganisation required below
 
+def get_clonotype_mean_mut_freq(summary_df, var="mut_freq_per_bp_vj"):
+    '''For each clonotype present, get mean mutational freq per base pair
+    '''
+    return summary_df.groupby("clonotype")[var].mean()
+#
+
+def get_clonotype_mut_freqs(summary_df, var="mut_freq_per_bp_vj"):
+    '''For each clonotype present, get the mutational freqs of the clonotypes
+    '''
+    return summary_df.groupby("clonotype", "patient_code")[var]
+
+def get_clonotype_mut_freqs(df, clonotype_field="clonotype", groups=None, prop=False, fillna=True):
+    if groups is None:
+        freqs = df.groupby([clonotype_field]).apply(len)
+    else:
+        freqs = df.groupby([clonotype_field] + groups).apply(len).unstack()
+    if fillna:
+        freqs = freqs.fillna(0)
+    if prop:
+        if len(freqs.shape) > 1:
+            return freqs.apply(lambda x: x/sum(x)) 
+        else:
+            return freqs/sum(freqs) 
+    else:
+        return freqs
+
+rep1_mut_rate = get_clonotype_mean_mut_freq(rep1)
+rep2_mut_rate = get_clonotype_mean_mut_freq(rep2)
+
+rep1_freq = get_clonotype_freq(rep1, "VJ-GENE", ["patient_code"])
+rep2_freq = get_clonotype_freq(rep2, "VJ-GENE", ["patient_code"])
+#
+rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffix="_rep2").fillna(0)
+
+
+
 # Filter by those detected in the naive rep of individuals?
-
-#
-rep_prop_joined = rep1_prop.join(rep2_prop, how='outer', lsuffix="_1", rsuffix="_2").fillna(0)
-rep_prop_arcsin_joined = rep1_prop_arcsin.join(rep2_prop_arcsin, how='outer', lsuffix="_1", rsuffix="_2").fillna(0)
-#
-# Difference in proportion of the repertoire between two reps
-#
-
-rep1_freq = get_clonotype_freq(rep1, "clonotype", prop=False)
-rep2_freq = get_clonotype_freq(rep2, "clonotype", prop=False)
-rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_1", rsuffix="_2").fillna(0)
-#
-foo = prop_test_ztest(rep_freq_joined["1017_1"], rep_freq_joined["1017_2"])
-bar = sm.stats.multipletests(foo, method="fdr_bh", alpha=0.1)
-print(rep_freq_joined.index[bar[0]][rep_freq_joined.index[bar[0]].isin(mAb_df["clonotype"])])
-#
-foo = prop_test_ztest(rep_freq_joined["1019_1"], rep_freq_joined["1019_2"])
-bar = sm.stats.multipletests(foo, method="fdr_bh", alpha=0.1)
-print(rep_freq_joined.index[bar[0]][rep_freq_joined.index[bar[0]].isin(mAb_df["clonotype"])])
-#
-foo = prop_test_ztest(rep_freq_joined["2207_1"], rep_freq_joined["2207_2"])
-bar = sm.stats.multipletests(foo, method="fdr_bh", alpha=0.1)
-print(rep_freq_joined.index[bar[0]][rep_freq_joined.index[bar[0]].isin(mAb_df["clonotype"])])
 
 #
 # Diversity of a single repertoire
@@ -290,18 +339,6 @@ matplotlib_venn.venn2(subsets=(len(rep1_clonotypes - rep2_clonotypes), len(rep1_
 #
 # Find those clonotypes with increased Mutational frequencies
 #
-def get_clonotype_mean_mut_freq(summary_df, var="mut_freq_per_bp_vj"):
-    '''For each clonotype present, get mean mutational freq per base pair
-    '''
-    return summary_df.groupby("clonotype")[var].mean()
-#
-def get_clonotype_mut_freqs(summary_df, var="mut_freq_per_bp_vj"):
-    '''For each clonotype present, get mean mutational freq per base pair
-    '''
-    return summary_df.groupby("clonotype", "patient_code")[var]
-
-rep1_mut_rate = get_clonotype_mean_mut_freq(rep1)
-rep2_mut_rate = get_clonotype_mean_mut_freq(rep2)
 #
 # Scatterplot of clonotype freq
 fig, axes = plt.subplots()
