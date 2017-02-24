@@ -153,6 +153,7 @@ count_clonotype_cpm_normed = pd.read_csv("./.output/count_clonotype.cpm_normed.c
 #
 rep1 = summary_df.query("day == 0 & cell_type == 'MBC'")
 rep2 = summary_df.query("day == 140 & cell_type == 'MBC'")
+patient_codes = summary_df["patient_code"].unique()
 analysis_level = "VJ-GENE"
 
 #
@@ -169,7 +170,7 @@ rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffi
 #
 
 clonotypes_expanded = dict()
-for patient_code in rep1_freq.columns:
+for patient_code in patient_codes: 
     rep1_sample_freq = rep_freq_joined[str(patient_code) + "_rep1"] 
     rep2_sample_freq = rep_freq_joined[str(patient_code) + "_rep2"] 
     #
@@ -186,10 +187,10 @@ for patient_code in rep1_freq.columns:
 # t-test for difference in mutational rate per bp
 #
 clonotypes_mut_rate_inc = dict()
-for patient_code in rep1_freq.columns:
+for patient_code in patient_codes: 
     ps = []
     clonotypes = []
-    for clonotype in rep1_freq.index:
+    for clonotype in rep_freq_joined.index:
         rep1_sample_mut_freqs = rep1.loc[(rep1[analysis_level] == clonotype) & (rep1["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
         rep2_sample_mut_freqs = rep2.loc[(rep2[analysis_level] == clonotype) & (rep2["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
         n1 = len(rep1_sample_mut_freqs) 
@@ -214,37 +215,69 @@ for patient_code in rep1_freq.columns:
 #
 # Determine overlaps with known mAB clonotypes
 #
-
 for clonotypes in clonotypes_expanded.values():
     print(set(clonotypes) & set(mAb_df[analysis_level]))
 for clonotypes in clonotypes_mut_rate_inc.values():
     print(set(clonotypes) & set(mAb_df[analysis_level]))
 
+# For each clonotype, get status:
+# Expanded?
+# Mutated?
+# Present in naive rep d0?
+# Present in MBC d0?
+# Overlap with known mAB at
+    # V-Gene
+    # VJ level
+results = pd.DataFrame({
+    "clonotype": rep1_freq.index 
+})
+results["expanded"] = results["clonotype"].apply(lambda x:
+    list(filter(lambda p: x in clonotypes_expanded[p], patient_codes))
+)
+results["mutated"] = results["clonotype"].apply(lambda x:
+    list(filter(lambda p: x in clonotypes_mut_rate_inc[p], patient_codes))
+)
+naive_reps_d0 = dict(zip(
+    patient_codes,
+    (set(get_naive_rep(summary_df).query("day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
+)) 
+results["in_naive_d0"] = results["clonotype"].apply(lambda x:
+    list(filter(lambda p: x in naive_reps_d0[p], patient_codes))
+)
+results["known_mAb_analysis_level"] = results["clonotype"].apply(lambda x:
+    list(mAb_df.loc[mAb_df[analysis_level] == x, "Ab.Name"])
+)
+results[results.loc[:, ["expanded", "mutated"]].apply(all, axis=1)]
+
 # TODO
 # reorganisation required below
+results["in_MBC_d0"]
+results["in_MBC_d140"]
+results["known_mAb_V"]
 
-# Check for presence in naive rep of that sample
-'IGHV1-18.IGHJ5' in set(get_naive_rep(summary_df).query("patient_code == 1017 & day == 0")[analysis_level])
-
-# Horizontal swarm plot of FDR. 
+# Horizontal swarm plot of log p value
 # Group by sample
 # Hue by known mAB clonotypes, or presence in sample naive rep
 
 foo = pd.DataFrame({
-    'clonotype': rep1_sample_freq.index,
-    'pvals_corrected': pvals_corrected,
-    'known_mAb_clonotype': rep1_sample_freq.index.isin(mAb_df[analysis_level])
+    'clonotype': clonotypes,
+    'pvals_corrected': np.log10(ps),
+    'known_mAb_clonotype': [c in set(mAb_df[analysis_level]) for c in clonotypes]
 })
 foo["known_mAb_clonotype"] = foo["known_mAb_clonotype"].astype("category")
+foo["patient_code"] = pd.Series(np.random.choice([1,2,3], len(foo))).astype("category")
         
-sns.swarmplot(x="pvals_corrected", hue="known_mAb_clonotype", data=foo[foo["pvals_corrected"] < 1.0])
+fig, axes = plt.figure()
+
+plt.figure()
+sns.swarmplot(x="pvals_corrected", y="patient_code", hue="known_mAb_clonotype", data=foo)
 
 # In[156]:
 
 def get_clonotype_mean_mut_freq(summary_df, var="mut_freq_per_bp_vj"):
     '''For each clonotype present, get mean mutational freq per base pair
     '''
-    return summary_df.groupby("clonotype")[var].mean()
+    eturn summary_df.groupby("clonotype")[var].mean()
 #
 
 def get_clonotype_mut_freqs(summary_df, var="mut_freq_per_bp_vj"):
