@@ -26,6 +26,19 @@ def get_clonotype_freq(df, clonotype_field="clonotype", groups=None, prop=False,
     else:
         return freqs
 
+def get_naive_rep(df, negate=False):
+    '''Filter for the naive repertoire
+
+    negate: If true, return non-naive rep instead.
+    '''
+    mask = ((df["V-REGION identity %"] == 100)
+            & (df["digest"].map(lambda x: "IGHM" in x or "IGHG" in x))
+            & (df["cell_type"] == "PBMCs"))
+    if negate:
+        return df.loc[np.logical_not(mask)]
+    else:
+        return df[mask]
+
 #
 # Specific expansions
 #

@@ -72,6 +72,8 @@ summary(decideTests(fit2.clonotype, p.value=0.05))
 
 topTable(fit2.clonotype, coef="group140.MBC - group0.MBC", n=20)
 
+topTable(fit2.clonotype, coef="group140.MBC - group0.PBMCs", n=20)
+
 getCounts <- function(clonotype) {
     print( (dge.clonotype$counts)[rownames(dge.clonotype) == clonotype][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)] )
     print( cpm(dge.clonotype)[rownames(dge.clonotype) == clonotype][grepl(".0.PBMCs", colnames(dge.clonotype), fixed=T)] )
@@ -82,6 +84,9 @@ getCounts <- function(clonotype) {
 getCounts("IGHV3-7.IGHJ4.CDR3_len23")
 getCounts("IGHV4-38-2.IGHJ5.CDR3_len8")
 getCounts("IGHV4-28.IGHJ5.CDR3_len11")
+
+# TODO
+# unfinished below
 
 #
 # Paired t-test for proportions
@@ -123,41 +128,4 @@ summary(lmer(gini_i ~ cell_type+day + (1 | patient_code), sampleInfo))
 adj <- as.matrix(read.csv("../team115_lustre/1_analyse_clonotypes/adj.csv"))
 rownames(adj) <- colnames(adj)
 chordDiagram(adj, symmetric=F, self.link=1)
-
-#
-# IMGT/StatClonotype uses a generic statistical procedure [1] for identifying
-# significant changes in IG and TR differences of proportions of IMGT clonotypes
-# (AA) diversity and expression [5].
-#
-library(IMGTStatClonotype)
-
-data(MID1)
-data(MID2)
-
-MID1<-clonRem(MID1)
-MID2<-clonRem(MID2)
-
-# ...the IMGTstandardized approach allows a clear distinction between 
-# the clonotype diversity (numbers of IMGTclonotypes (AA) perV,Dor J gene), 
-# and the clonotype expression (numbers of sequences assigned, unambiguously, to a given IMGT clonotype (AA) perV,Dor J gene) [16]...
-
-# Numbers of IMGT clonotypes (AA) in the two compared sets from the
-# IMGT/HighV-QUEST output for clonotype diversity
-Ndiv<-clonNumDiv(MID1,MID2)
-# Numbers of IMGT clonotypes (AA) in the two compared sets from the
-# IMGT/HighV-QUEST output for clonotype expression
-Nexp<-clonNumExp(MID1,MID2)
-
-# Significance of the difference in proportions with 95% confidence in-
-# terval (CI) for IMGT clonotype (AA) diversity between two sets from
-# IMGT/HighV-QUEST output
-div<-sigrepDiv(Ndiv,MID1,MID2)
-# Significance of the difference in proportions with 95% confidence in-
-# terval (CI) for IMGT clonotype (AA) expression between two sets from
-# IMGT/HighV-QUEST output
-exp<-sigrepExp(Nexp,MID1,MID2)
-
-diffpropGph(div)$Vgenes
-diffpropGph(exp)$Vgenes
-
 

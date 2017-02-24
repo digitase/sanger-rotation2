@@ -15,6 +15,7 @@ import scipy
 import statsmodels.api as sm
 import itertools
 
+# Import (or reload) helper functions
 import imp
 import process_clonotype_data_helpers
 imp.reload(process_clonotype_data_helpers)
@@ -108,21 +109,24 @@ summary_df["VJ-REGION_len"] = summary_df["V-REGION_len"] + summary_df["J-REGION_
 summary_df["mut_freq_per_bp_v"] = (
     (summary_df["V-REGION_len"] - summary_df["V-REGION_unmut_len"])
     /summary_df["V-REGION_len"]
-    /summary_df["V-REGION_len"]
+    # /summary_df["V-REGION_len"]
 )
 summary_df["mut_freq_per_bp_j"] = (
     (summary_df["J-REGION_len"] - summary_df["J-REGION_unmut_len"])
     /summary_df["J-REGION_len"]
-    /summary_df["J-REGION_len"]
+    # /summary_df["J-REGION_len"]
 )
 summary_df["mut_freq_per_bp_vj"] = (
     (summary_df["VJ-REGION_len"] - summary_df["V-REGION_unmut_len"] - summary_df["J-REGION_unmut_len"])
     / summary_df["VJ-REGION_len"]
-    / summary_df["VJ-REGION_len"]
+    # / summary_df["VJ-REGION_len"]
 )
 
 #
 # Write out counts, read in normalised counts from edgeR
+#
+# Write out summary_df
+summary_df.to_csv("../team115_lustre/1_analyse_clonotypes/summary.csv", index=False)
 #
 # Biological unit: clonotype
 count_clonotype = get_clonotype_freq(summary_df, "clonotype", groups=["sample_num"])
@@ -139,6 +143,7 @@ count_v.to_csv("../team115_lustre/1_analyse_clonotypes/count_v.csv")
 # Write out sample information csv
 sample_info_df.to_csv("../team115_lustre/1_analyse_clonotypes/sample_info.csv", index=False)
 #
+#
 # Read back in normalised counts
 count_clonotype_cpm_normed = pd.read_csv("./.output/count_clonotype.cpm_normed.csv", header=0, index_col=0)
 
@@ -148,6 +153,7 @@ count_clonotype_cpm_normed = pd.read_csv("./.output/count_clonotype.cpm_normed.c
 #
 rep1 = summary_df.query("day == 0 & cell_type == 'MBC'")
 rep2 = summary_df.query("day == 140 & cell_type == 'MBC'")
+analysis_level = "VJ-GENE"
 
 #
 # Specific expansions of clonotypes
@@ -156,8 +162,8 @@ rep2 = summary_df.query("day == 140 & cell_type == 'MBC'")
 # Detect increases in clonotype proportion
 # Z-test for difference in proportions
 #
-rep1_freq = get_clonotype_freq(rep1, "VJ-GENE", ["patient_code"])
-rep2_freq = get_clonotype_freq(rep2, "VJ-GENE", ["patient_code"])
+rep1_freq = get_clonotype_freq(rep1, analysis_level, ["patient_code"])
+rep2_freq = get_clonotype_freq(rep2, analysis_level, ["patient_code"])
 #
 rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffix="_rep2").fillna(0)
 #
@@ -167,7 +173,7 @@ for patient_code in rep1_freq.columns:
     rep1_sample_freq = rep_freq_joined[str(patient_code) + "_rep1"] 
     rep2_sample_freq = rep_freq_joined[str(patient_code) + "_rep2"] 
     #
-    reject, _, _, _ = prop_test_ztest(
+    reject, pvals_corrected, _, _ = prop_test_ztest(
         rep1_sample_freq,
         rep2_sample_freq,
         alternative="smaller",
@@ -184,8 +190,8 @@ for patient_code in rep1_freq.columns:
     ps = []
     clonotypes = []
     for clonotype in rep1_freq.index:
-        rep1_sample_mut_freqs = rep1.loc[(rep1["VJ-GENE"] == clonotype) & (rep1["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
-        rep2_sample_mut_freqs = rep2.loc[(rep2["VJ-GENE"] == clonotype) & (rep2["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
+        rep1_sample_mut_freqs = rep1.loc[(rep1[analysis_level] == clonotype) & (rep1["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
+        rep2_sample_mut_freqs = rep2.loc[(rep2[analysis_level] == clonotype) & (rep2["patient_code"] == patient_code), "mut_freq_per_bp_vj"]
         n1 = len(rep1_sample_mut_freqs) 
         n2 = len(rep2_sample_mut_freqs) 
         # Ensure at least 2 clones present per clonotype
@@ -196,7 +202,8 @@ for patient_code in rep1_freq.columns:
                 np.sqrt(rep2_sample_mut_freqs), 
                 equal_var=False,
             )
-            # Find negative test statistics
+            # Convert to 1-sided test; find negative test statistics
+            pvalue = 0.5 * pvalue
             if statistic >= 0: 
                 pvalue = 1.0
             ps.append(pvalue)
@@ -205,11 +212,34 @@ for patient_code in rep1_freq.columns:
     clonotypes_mut_rate_inc[patient_code] = list(itertools.compress(clonotypes, fdrs[0]))
 
 #
+# Determine overlaps with known mAB clonotypes
 #
-#
+
+for clonotypes in clonotypes_expanded.values():
+    print(set(clonotypes) & set(mAb_df[analysis_level]))
+for clonotypes in clonotypes_mut_rate_inc.values():
+    print(set(clonotypes) & set(mAb_df[analysis_level]))
 
 # TODO
 # reorganisation required below
+
+# Check for presence in naive rep of that sample
+'IGHV1-18.IGHJ5' in set(get_naive_rep(summary_df).query("patient_code == 1017 & day == 0")[analysis_level])
+
+# Horizontal swarm plot of FDR. 
+# Group by sample
+# Hue by known mAB clonotypes, or presence in sample naive rep
+
+foo = pd.DataFrame({
+    'clonotype': rep1_sample_freq.index,
+    'pvals_corrected': pvals_corrected,
+    'known_mAb_clonotype': rep1_sample_freq.index.isin(mAb_df[analysis_level])
+})
+foo["known_mAb_clonotype"] = foo["known_mAb_clonotype"].astype("category")
+        
+sns.swarmplot(x="pvals_corrected", hue="known_mAb_clonotype", data=foo[foo["pvals_corrected"] < 1.0])
+
+# In[156]:
 
 def get_clonotype_mean_mut_freq(summary_df, var="mut_freq_per_bp_vj"):
     '''For each clonotype present, get mean mutational freq per base pair
@@ -458,21 +488,6 @@ for patient_code in ["1019", "2207"]:
 
 # Find V-genes that increased in abundance from day 0
 
-# Get naive rep from day 0 
-def get_naive_rep(summary_df, negate=False):
-    '''Filter for the naive repertoire
-    '''
-    mask = (summary_df["V-REGION identity %"] == 100
-            & summary_df["digest"].map(lambda x: "IGHM" in x or "IGHG" in x)
-            & summary_df["cell_type"] == "PBMCs")
-    if negate:
-        return summary_df.loc[np.logical_not(mask)]
-    else:
-        return summary_df[mask]
-# naive_d0 = get_naive_rep(summary_df).query("day == 0")
-get_naive_rep(summary_df)
-
-# In[156]:
 
 def var_by_indiv_plots(summary_df, var="V-GENE", cell_type=None, day=None):
     # Filter out relevant cell types and days

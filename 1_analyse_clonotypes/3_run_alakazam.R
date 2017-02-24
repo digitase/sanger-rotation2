@@ -7,15 +7,52 @@
 library(dplyr)
 library(lazyeval)
 library(ggplot2)
+library(data.table)
 
 source("~/packages/alakazam/R/Diversity.R")
 source("~/packages/alakazam/R/Core.R")
 source("~/packages/alakazam/R/Classes.R")
 
+# Convert summary format from IMGT to alakazam format
+summary2Alakazam <- function(df) {
+    data.frame(
+        SEQUENCE_ID=df$"Sequence ID",
+        SEQUENCE_IMGT=NA,
+        V_CALL=df$"V-GENE and allele",
+        V_CALL_GENOTYPED=df$"V-GENE",
+        D_CALL=df$"D-GENE and allele",
+        J_CALL=df$"J-GENE and allele",
+        JUNCTION=df$"AA JUNCTION",
+        JUNCTION_LENGTH=NA,
+        NP1_LENGTH=NA,
+        NP2_LENGTH=NA,
+        SAMPLE=df$"sample_num",
+        DAY=df$"day",
+        ISOTYPE=df$"isotypes",
+        DUPCOUNT=1,
+        CLONE=df$"VJ-GENE"
+    )
+}
+
+# Read in repertoires
+summaryDf <- fread("../team115_lustre/1_analyse_clonotypes/summary.csv")
+
+pdf("../team115_lustre/1_analyse_clonotypes/alakazam.pdf")
+for (p in unique(summaryDf$"patient_code")) {
+    rep1 <- summaryDf[cell_type == "MBC" & (day == 0 | day == 140) & patient_code == p]
+    rep1Db <- summary2Alakazam(rep1)
+    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, nboot=2000)
+    # Plot a log-log (log_q=TRUE, log_d=TRUE) plot of sample diversity
+    sample_main <- paste0("patient_code ", p, " Sample diversity (n=", sample_div@n, ")")
+    sample_colors <- c("0"="seagreen", "140"="steelblue")
+    plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Sample", log_q=F, log_d=TRUE)
+}
+dev.off()
+
 # Vignette
 if(F) {
     load("~/packages/alakazam/data/ExampleDb.rda")
-    head(ExampleDb)
+    str(ExampleDb)
     # df, required columns in ExampleDb for rarefyDiversity function
     #     <group>: grouping factor for which to draw multiple curves e.g. timepoint, isotype
     #     <clone>: clonotype colname
@@ -36,6 +73,4 @@ if(F) {
     sample_colors <- c("-1h"="seagreen", "+7d"="steelblue")
     plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Sample", log_q=F, log_d=TRUE)
 }
-
-
 
