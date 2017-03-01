@@ -169,24 +169,37 @@ rep2_freq = get_clonotype_freq(rep2, analysis_level, ["patient_code"])
 rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffix="_rep2").fillna(0)
 #
 
+# Look at distribution of counts to determine possible low counts threshold
+# rep_freq_joined_long = pd.melt(rep_freq_joined.apply(np.sqrt))
+# fig, ax = plt.subplots()
+# for col in rep_freq_joined.columns:
+    # sns.kdeplot(np.sqrt(rep_freq_joined[col]), ax=ax)
+
+# Detect expanded clonotypes
 clonotypes_expanded = dict()
+clonotypes_expanded_ps = dict()
 for patient_code in patient_codes: 
     rep1_sample_freq = rep_freq_joined[str(patient_code) + "_rep1"] 
     rep2_sample_freq = rep_freq_joined[str(patient_code) + "_rep2"] 
     #
-    reject, pvals_corrected, _, _ = prop_test_ztest(
+    ps = prop_test_ztest(
         rep1_sample_freq,
         rep2_sample_freq,
-        alternative="smaller",
-        fdr_alpha=0.05
+        alternative="smaller"
     )
-    clonotypes_expanded[patient_code] = rep1_sample_freq.index[reject]
+    reject, pvals_corrected, _, _ = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.05)
+    clonotypes_expanded[patient_code] = rep_freq_joined.index[reject]
+    clonotypes_expanded_ps[patient_code] = pd.DataFrame({"clonotype": rep_freq_joined.index, 
+                                                         "p": ps,
+                                                         "pvals_corrected": pvals_corrected,
+                                                         "reject": reject})
 
 #
 # Detect increases in clonotype mutational frequency
 # t-test for difference in mutational rate per bp
 #
 clonotypes_mut_rate_inc = dict()
+clonotypes_mut_rate_inc_ps = dict()
 for patient_code in patient_codes: 
     ps = []
     clonotypes = []
@@ -203,14 +216,18 @@ for patient_code in patient_codes:
                 np.sqrt(rep2_sample_mut_freqs), 
                 equal_var=False,
             )
-            # Convert to 1-sided test; find negative test statistics
-            pvalue = 0.5 * pvalue
+            # Convert to 1-sided test; restrict to negative test statistics
+            # pvalue = 0.5 * pvalue
             if statistic >= 0: 
                 pvalue = 1.0
             ps.append(pvalue)
             clonotypes.append(clonotype)
-    fdrs = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.05)
-    clonotypes_mut_rate_inc[patient_code] = list(itertools.compress(clonotypes, fdrs[0]))
+    reject, pvals_corrected, _, _ = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.10)
+    clonotypes_mut_rate_inc[patient_code] = list(itertools.compress(clonotypes, reject))
+    clonotypes_mut_rate_inc_ps[patient_code] = pd.DataFrame({"clonotype": clonotypes, 
+                                                             "p": ps,
+                                                             "pvals_corrected": pvals_corrected,
+                                                             "reject": reject})
 
 #
 # Determine overlaps with known mAB clonotypes
@@ -247,37 +264,88 @@ results["in_naive_d0"] = results["clonotype"].apply(lambda x:
 results["known_mAb_analysis_level"] = results["clonotype"].apply(lambda x:
     list(mAb_df.loc[mAb_df[analysis_level] == x, "Ab.Name"])
 )
+results["isotype"] = results["clonotype"].apply(lambda x:
+    collections.Counter(itertools.chain(*rep2.loc[rep2[analysis_level] == x, "isotypes"]
+)))
+
 results[results.loc[:, ["expanded", "mutated"]].apply(all, axis=1)]
+# results["in_MBC_d0"]
+# results["in_MBC_d140"]
+# results["known_mAb_V"]
+
+#
+# Horizontal swarm plot of log p value
+# TODO Draw significance lines
+#
+clonotype_ps_combined = pd.concat(clonotypes_expanded_ps.values(), keys=clonotypes_expanded_ps.keys(), names=["patient_code"]).reset_index()
+clonotype_mut_ps_combined = pd.concat(clonotypes_mut_rate_inc_ps.values(), keys=clonotypes_mut_rate_inc_ps.keys(), names=["patient_code"]).reset_index()
+clonotype_ps_combined['known_mAb_clonotype'] = clonotype_ps_combined["clonotype"].isin(mAb_df[analysis_level])
+clonotype_ps_combined = clonotype_ps_combined.merge(
+        clonotype_mut_ps_combined[['patient_code', 'clonotype', 'p', 'pvals_corrected', 'reject']],
+        how='left',
+        on=['patient_code', 'clonotype'],
+        suffixes=['_expand', "_mut"]
+)
+clonotype_ps_combined['patient_code'] = clonotype_ps_combined['patient_code'].astype("category")
+
+fig, axes = plt.subplots(figsize=(16, 10))
+# axes.set(xscale="log")
+g = sns.swarmplot(x="p_expand", y="patient_code", hue="known_mAb_clonotype", data=clonotype_ps_combined, ax=axes)
+fig.savefig("../team115_lustre/1_analyse_clonotypes/expand_ps_swarmplot.pdf")
+
+# Scatter plot using both expansion and mut rate p values
+g = sns.lmplot(
+    x="p_expand", y="p_mut", data=clonotype_ps_combined, 
+    hue="known_mAb_clonotype", col="patient_code", fit_reg=False,
+    x_jitter=0.01, y_jitter=0.01, palette=sns.color_palette('colorblind')[1:]
+)
+g.savefig("../team115_lustre/1_analyse_clonotypes/expand_mut_ps_lmplot.pdf")
+
+# TODO
+# workspace below
+
+# Paired bar plots of isotype proportions for clonotypes that are expanded and mutated, vs clonotypes that are not
+
+# Two timepoint stacked area plot of clonotype proportions (top 100)
+
+#
+# Clonotype sharing, indicative of convergent response
+#
+
+# Heatmap of clonotype sharing
+
+sample_names = ["LEA_S" + str(n) for n in [1, 11, 15, 3, 9, 7]]
+foo = count_clonotype_cpm_normed.loc[:, sample_names].apply(lambda x: x/sum(x))
+dist = scipy.spatial.distance.pdist(foo.astype(bool).transpose(), 'jaccard')
+dist = (1 - scipy.spatial.distance.squareform(dist)) * len(foo)
+
+dist = scipy.spatial.distance.pdist(foo.astype(bool).transpose(), lambda x, y: sum(1 for i in range(len(x)) if x[i] and y[i]))
+dist = pd.DataFrame(len(foo) - scipy.spatial.distance.squareform(dist))
+dist.columns = sample_names
+dist.index = sample_names
+
+sns.heatmap(dist.astype(int), annot=True, fmt="d", linewidths=.5)
+
+sns.clustermap(dist.astype(int), annot=True, linewidths=.5, fmt="d")
+
+# TODO are shared clonotypes the same?
+# Plot p value vs amount of sharing
+
+# TODO PCA
+# import sklearn.decomposition 
+# pca = sklearn.decomposition.PCA(n_components=2)
+# pca.fit(foo.transpose())
+# bar = pca.transform(foo.transpose())
 
 # TODO
 # reorganisation required below
-results["in_MBC_d0"]
-results["in_MBC_d140"]
-results["known_mAb_V"]
-
-# Horizontal swarm plot of log p value
-# Group by sample
-# Hue by known mAB clonotypes, or presence in sample naive rep
-
-foo = pd.DataFrame({
-    'clonotype': clonotypes,
-    'pvals_corrected': np.log10(ps),
-    'known_mAb_clonotype': [c in set(mAb_df[analysis_level]) for c in clonotypes]
-})
-foo["known_mAb_clonotype"] = foo["known_mAb_clonotype"].astype("category")
-foo["patient_code"] = pd.Series(np.random.choice([1,2,3], len(foo))).astype("category")
-        
-fig, axes = plt.figure()
-
-plt.figure()
-sns.swarmplot(x="pvals_corrected", y="patient_code", hue="known_mAb_clonotype", data=foo)
 
 # In[156]:
 
 def get_clonotype_mean_mut_freq(summary_df, var="mut_freq_per_bp_vj"):
     '''For each clonotype present, get mean mutational freq per base pair
     '''
-    eturn summary_df.groupby("clonotype")[var].mean()
+    return summary_df.groupby("clonotype")[var].mean()
 #
 
 def get_clonotype_mut_freqs(summary_df, var="mut_freq_per_bp_vj"):
