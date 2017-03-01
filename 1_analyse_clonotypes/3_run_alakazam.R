@@ -4,9 +4,10 @@
 # Necessary due to failure of installation
 # cc1plus: error: unrecognised command line option ‘-std=c++11’
 #
-library(dplyr)
 library(lazyeval)
 library(ggplot2)
+library(dtplyr)
+library(dplyr)
 library(data.table)
 
 source("~/packages/alakazam/R/Diversity.R")
@@ -37,11 +38,11 @@ summary2Alakazam <- function(df) {
 # Read in repertoires
 summaryDf <- fread("../team115_lustre/1_analyse_clonotypes/summary.csv")
 
-pdf("../team115_lustre/1_analyse_clonotypes/alakazam.pdf")
+pdf("../team115_lustre/1_analyse_clonotypes/hill_curves_alakazam.pdf")
 for (p in unique(summaryDf$"patient_code")) {
     rep1 <- summaryDf[cell_type == "MBC" & (day == 0 | day == 140) & patient_code == p]
     rep1Db <- summary2Alakazam(rep1)
-    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, nboot=2000)
+    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, nboot=200)
     # Plot a log-log (log_q=TRUE, log_d=TRUE) plot of sample diversity
     sample_main <- paste0("patient_code ", p, " Sample diversity (n=", sample_div@n, ")")
     sample_colors <- c("0"="seagreen", "140"="steelblue")

@@ -8,3 +8,4 @@ team115_lustre
 ._.DS_Store
 ._*
 __pycache__
+*.pyc

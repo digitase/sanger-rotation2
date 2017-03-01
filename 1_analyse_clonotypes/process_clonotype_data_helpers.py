@@ -48,7 +48,7 @@ def arcsin_transform(x):
     '''
     return(np.arcsin(np.sqrt(x)))
 
-def prop_test_ztest(rep1_freqs, rep2_freqs, alternative="two-sided", fdr_alpha=None):
+def prop_test_ztest(rep1_freqs, rep2_freqs, alternative="two-sided"):
     '''Z-test for difference between two proportions
 
     rep1_freqs, rep2_freqs: frequency tables for the two repertoires
@@ -67,8 +67,6 @@ def prop_test_ztest(rep1_freqs, rep2_freqs, alternative="two-sided", fdr_alpha=N
         # Situation where both counts are 0
         else:
             ps.append(1.0)
-    if fdr_alpha:
-        ps = sm.stats.multipletests(ps, method="fdr_bh", alpha=fdr_alpha)
     return ps
 
 def prop_test_fisher(rep1_freqs, rep2_freqs, fdr_alpha=None):

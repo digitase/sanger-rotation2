@@ -42,7 +42,21 @@ colnames(dge.clonotype) <- sampleInfo$id
 dge.clonotype.filtered <- dge.clonotype[rowSums(dge.clonotype$counts >= 2) >= 0,  , keep.lib.sizes=F]
 # dge.clonotype.filtered <- dge.clonotype[colnames(dge.clonotype.filtered) != "LEA_S20.1019.63.PBMCs", ]
 
-plotMDS(dge.clonotype.filtered, labels=paste(sampleInfo$day, sampleInfo$cell_type, sep="_"), col=as.numeric(sampleInfo$patient_code))
+# Filter for samples of interest
+# toKeep <- T
+toKeep <- colnames(dge.clonotype.filtered) %in% unlist(sampleInfo[sampleInfo[, cell_type == "MBC" & (day == 0 | day == 140)], "id"])
+dge.clonotype.filtered <- dge.clonotype.filtered[, toKeep]
+
+pdf('../team115_lustre/1_analyse_clonotypes/sample_mds_edgeR.pdf')
+
+plotMDS(dge.clonotype.filtered, 
+        labels=paste(sampleInfo$day, sampleInfo$cell_type, sep="_")[toKeep], 
+        col=as.numeric(sampleInfo$patient_code)[toKeep],
+        gene.selection="common"
+)
+legend("bottomright", legend=sampleInfo$patient_code[toKeep], fill=as.numeric(sampleInfo$patient_code)[toKeep])
+
+dev.off()
 
 # Since we need to make comparisons both within and between subjects, it is necessary to treat patient_code as a random effect.
 design <- model.matrix(~ 0 + group, sampleInfo)
