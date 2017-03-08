@@ -38,15 +38,35 @@ summary2Alakazam <- function(df) {
 # Read in repertoires
 summaryDf <- fread("../team115_lustre/1_analyse_clonotypes/summary.csv")
 
-pdf("../team115_lustre/1_analyse_clonotypes/hill_curves_alakazam.pdf")
+pdf("../team115_lustre/1_analyse_clonotypes/hill_curves_alakazam.pdf", width=3, height=3)
 for (p in unique(summaryDf$"patient_code")) {
+
     rep1 <- summaryDf[cell_type == "MBC" & (day == 0 | day == 140) & patient_code == p]
     rep1Db <- summary2Alakazam(rep1)
-    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, nboot=200)
+    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, min_n=5, nboot=20)
     # Plot a log-log (log_q=TRUE, log_d=TRUE) plot of sample diversity
-    sample_main <- paste0("patient_code ", p, " Sample diversity (n=", sample_div@n, ")")
+    # sample_main <- paste0("Patient code: ", p, "\nSample diversity (no. clones with > 30 reads = ", sample_div@n, ")")
+    sample_main <- paste0("Patient code: ", p)
     sample_colors <- c("0"="seagreen", "140"="steelblue")
-    plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Sample", log_q=F, log_d=TRUE)
+    curve = plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Day", log_q=F, log_d=T, ylim=c(NA, 2**7.5),
+                       silent = T,
+                       legend.position = c(0.80, 0.80)
+                       )
+
+    # Adjust the theming
+    curve + 
+        labs(x="Diversity order (q)", y=expression('Diversity ('^q * D * ')')) +
+        theme(
+            plot.title = element_text(size=14),
+            axis.title = element_text(size=14),
+            axis.text.x = element_text(size=14),
+            axis.text.y = element_text(size=14),
+            legend.title = element_text(size=14),
+            legend.text = element_text(size=14)
+        )
+
+    plot(curve)
+
 }
 dev.off()
 
