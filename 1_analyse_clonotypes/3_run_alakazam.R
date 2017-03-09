@@ -43,7 +43,7 @@ for (p in unique(summaryDf$"patient_code")) {
 
     rep1 <- summaryDf[cell_type == "MBC" & (day == 0 | day == 140) & patient_code == p]
     rep1Db <- summary2Alakazam(rep1)
-    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, min_n=5, nboot=20)
+    sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, min_n=5, nboot=200)
     # Plot a log-log (log_q=TRUE, log_d=TRUE) plot of sample diversity
     # sample_main <- paste0("Patient code: ", p, "\nSample diversity (no. clones with > 30 reads = ", sample_div@n, ")")
     sample_main <- paste0("Patient code: ", p)

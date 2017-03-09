@@ -101,6 +101,7 @@ getCounts("IGHV4-28.IGHJ5.CDR3_len11")
 
 # TODO
 # unfinished below
+stopifnot(F)
 
 #
 # Paired t-test for proportions
