@@ -52,22 +52,27 @@ def prop_test_ztest(rep1_freqs, rep2_freqs, alternative="two-sided"):
     '''Z-test for difference between two proportions
 
     rep1_freqs, rep2_freqs: frequency tables for the two repertoires
-    fdr_alpha: alpha level to use for FDR correction
     '''
     assert(len(rep1_freqs) == len(rep2_freqs))
+    zs = []
     ps = []
     for i in range(len(rep1_freqs)):
         if rep1_freqs[i] or rep2_freqs[i]:
-            p = sm.stats.proportions_ztest(
+            z, p = sm.stats.proportions_ztest(
                     [rep1_freqs[i], rep2_freqs[i]],
                     [sum(rep1_freqs), sum(rep2_freqs)],
                     alternative=alternative
-                )[1]
+                )
+            zs.append(z)
             ps.append(p)
         # Situation where both counts are 0
+        # We append a non significant result instead of an NA,
+        # as all clonotypes tested have counts in some sample, 
+        # so will be included in the analysis at some point.
         else:
+            zs.append(0.0)
             ps.append(1.0)
-    return ps
+    return zs, ps
 
 def prop_test_fisher(rep1_freqs, rep2_freqs, fdr_alpha=None):
     '''Fisher's exact test for association between two variables
@@ -93,4 +98,16 @@ def prop_test_fisher(rep1_freqs, rep2_freqs, fdr_alpha=None):
     if fdr_alpha:
         ps = sm.stats.multipletests(ps, method="fdr_bh", alpha=fdr_alpha)
     return ps
+
+def get_mean_ranks(x1, x2):
+    '''Get the mean ranks of samples x1 and x2 in the combined sample
+
+    Smallest value = rank 1
+
+    Returns: mean ranks and medians of samples
+    '''
+    combined = np.concatenate([x1, x2], axis=0)
+    ranks = scipy.stats.rankdata(combined)
+    ranks1, ranks2 = ranks[:len(x1)], ranks[len(x1):]
+    return np.mean(ranks1), np.mean(ranks2), np.median(x1), np.median(x2)
 

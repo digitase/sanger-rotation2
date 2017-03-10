@@ -84,7 +84,6 @@ summary_df["VJ-GENE"] = summary_df["V-GENE"] + "." + summary_df["J-GENE"]
 #
 # Read in sample information
 sample_info_df = pd.read_excel("/nfs/users/nfs_b/bb9/workspace/rotation2/team115_lustre/data/existing_bcr_data/MalariaSamplesBen/Malaria_Samples_SeqInfo.xlsx")
-sample_info_df["patient_code"] = sample_info_df["patient_code"].astype("category")
 #
 # Merge in patient number and cell type
 summary_df = pd.merge(summary_df, sample_info_df[["Tag Index", "patient_code", "cell_type"]], 
@@ -121,6 +120,8 @@ summary_df["mut_freq_vj"] = (
     (summary_df["VJ-REGION_len"] - summary_df["V-REGION_unmut_len"] - summary_df["J-REGION_unmut_len"])
     / summary_df["VJ-REGION_len"]
 )
+# Change to categorical patient code
+summary_df["patient_code"] = summary_df["patient_code"].astype("category")
 
 #
 # Write out counts, read in normalised counts from edgeR
@@ -152,7 +153,7 @@ summary_df["mut_freq_vj"] = (
 #
 rep1 = summary_df.query("day == 0 & cell_type == 'MBC'")
 rep2 = summary_df.query("day == 140 & cell_type == 'MBC'")
-patient_codes = summary_df["patient_code"].unique()
+patient_codes = sorted(summary_df["patient_code"].unique())
 # analysis_level = "VJ-GENE"
 analysis_level = "clonotype"
 # analysis_level = "CDR3_aa"
@@ -167,257 +168,200 @@ analysis_level = "clonotype"
 rep1_freq = get_clonotype_freq(rep1, analysis_level, ["patient_code"])
 rep2_freq = get_clonotype_freq(rep2, analysis_level, ["patient_code"])
 #
+rep1_prop = rep1_freq.apply(lambda x: x/sum(x))
+rep2_prop = rep2_freq.apply(lambda x: x/sum(x))
+#
 rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffix="_rep2").fillna(0)
+rep_prop_joined = rep1_prop.join(rep2_prop, how='outer', lsuffix="_rep1", rsuffix="_rep2").fillna(0)
 #
 
+# TODO
 # Look at distribution of counts to determine possible low counts threshold
 # rep_freq_joined_long = pd.melt(rep_freq_joined.apply(np.sqrt))
 # fig, ax = plt.subplots()
 # for col in rep_freq_joined.columns:
     # sns.kdeplot(np.sqrt(rep_freq_joined[col]), ax=ax)
 
-# Detect expanded clonotypes
-clonotypes_expanded = dict()
-clonotypes_expanded_ps = dict()
+# Detect expanded clonotypes for each patient,
+# then perform multipletesting correction on all samples simultaneously
+clonotypes_expanded_dict = dict()
 for patient_code in patient_codes: 
-    rep1_sample_freq = rep_freq_joined[str(patient_code) + "_rep1"] 
-    rep2_sample_freq = rep_freq_joined[str(patient_code) + "_rep2"] 
-    ps = prop_test_ztest(
-        rep1_sample_freq,
-        rep2_sample_freq,
-        alternative="smaller"
-    )
-    reject, pvals_corrected, _, _ = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.05)
-    clonotypes_expanded[patient_code] = rep_freq_joined.index[reject]
-    clonotypes_expanded_ps[patient_code] = pd.DataFrame({"clonotype": rep_freq_joined.index, 
-                                                         "p": ps,
-                                                         "pvals_corrected": pvals_corrected,
-                                                         "reject": reject})
-
-# Detect expanded clonotypes
-# but with FDR correction on all samples simultaneously
-clonotypes_expanded_ps = dict()
-for patient_code in patient_codes: 
-    # Only test clonotypes with increased prop in rep2
-    rep1_props = rep_freq_joined[str(patient_code) + "_rep1"]/sum(rep_freq_joined[str(patient_code) + "_rep1"])
-    rep2_props = rep_freq_joined[str(patient_code) + "_rep2"]/sum(rep_freq_joined[str(patient_code) + "_rep2"])
-    rep_freq_joined_increases = rep_freq_joined[rep2_props > rep1_props]
-    rep1_sample_freq = rep_freq_joined_increases[str(patient_code) + "_rep1"] 
-    rep2_sample_freq = rep_freq_joined_increases[str(patient_code) + "_rep2"] 
-    ps = prop_test_ztest(
-        rep1_sample_freq,
-        rep2_sample_freq,
+    x1 = rep_freq_joined[str(patient_code) + "_rep1"]
+    x2 = rep_freq_joined[str(patient_code) + "_rep2"]
+    zs, ps = prop_test_ztest(
+        x1, x2,
         alternative="two-sided"
     )
-    clonotypes_expanded_ps[patient_code] = pd.DataFrame({"clonotype": rep_freq_joined_increases.index, 
-                                                         "p": ps})
-#
-clonotypes_expanded_ps_combined = pd.concat(clonotypes_expanded_ps.values(), keys=list(clonotypes_expanded_ps.keys()), names=["patient_code"]).reset_index()
-clonotypes_expanded_ps_combined["reject"], clonotypes_expanded_ps_combined["pvals_corrected"], _, _ = sm.stats.multipletests(clonotypes_expanded_ps_combined["p"], method="fdr_bh", alpha=0.05)
-clonotypes_expanded_ps_combined.drop('level_1', axis=1, inplace=True)
-#
+    clonotypes_expanded_dict[patient_code] = pd.DataFrame({"clonotype": rep_freq_joined.index, 
+                                                           "z": zs,
+                                                           "p": ps,
+                                                           "rep1_freq": x1,
+                                                           "rep2_freq": x2,
+                                                           "rep1_prop": x1/sum(x1),
+                                                           "rep2_prop": x2/sum(x2),
+                                                           "known_mAb": rep_freq_joined.index.map(lambda x: list(mAb_df.loc[mAb_df[analysis_level] == x, "Ab.Name"]))
+                                                           })
+# Merge and perform multipletesting correction
+clonotypes_expanded_df = pd.concat(
+        clonotypes_expanded_dict.values(), 
+        keys=list(clonotypes_expanded_dict.keys()), 
+        names=["patient_code"])
+clonotypes_expanded_df = clonotypes_expanded_df.reset_index(level=0)
+clonotypes_expanded_df["signif"], clonotypes_expanded_df["p_corrected"], _, _ = sm.stats.multipletests(
+        clonotypes_expanded_df["p"], method="holm", alpha=0.05)
+# Determine expansion based on sign of z statistic
+clonotypes_expanded_df["expanded"] = clonotypes_expanded_df["signif"] & (clonotypes_expanded_df['z'] < 0)
+# Change patient code to categorical
+clonotypes_expanded_df['patient_code'] = clonotypes_expanded_df['patient_code'].astype("category", ordered=True)
+# Subset out those that are expanded in each patient
 clonotypes_expanded = dict()
 for patient_code in patient_codes:
-    clonotypes_expanded[patient_code] = set(clonotypes_expanded_ps_combined.loc[(clonotypes_expanded_ps_combined["patient_code"] == patient_code) & (clonotypes_expanded_ps_combined["reject"]), "clonotype"])
+    clonotypes_expanded[patient_code] = clonotypes_expanded_df.loc[clonotypes_expanded_df["patient_code"] == patient_code].query('expanded')
 
-#
-# Detect increases in clonotype mutational frequency
-# t-test for difference in mutational rate per bp
-# NOTE: doesn't work, as clonotypes not present in a repertoire causes test failure
-#
-clonotypes_mut_rate_inc = dict()
-clonotypes_mut_rate_inc_ps = dict()
-for patient_code in patient_codes: 
-    ps = []
-    clonotypes = []
-    for clonotype in rep_freq_joined.index:
-        rep1_sample_mut_freqs = rep1.loc[(rep1[analysis_level] == clonotype) & (rep1["patient_code"] == patient_code), "mut_freq_vj"]
-        rep2_sample_mut_freqs = rep2.loc[(rep2[analysis_level] == clonotype) & (rep2["patient_code"] == patient_code), "mut_freq_vj"]
-        n1 = len(rep1_sample_mut_freqs) 
-        n2 = len(rep2_sample_mut_freqs) 
-        # Ensure at least 2 clones present per clonotype
-        # if n1+n2 > 2 and n1 and n2:
-        if n1 > 1 and n2 > 1:
-            statistic, pvalue = scipy.stats.ttest_ind(
-                np.sqrt(rep1_sample_mut_freqs), 
-                np.sqrt(rep2_sample_mut_freqs), 
-                equal_var=False,
-            )
-            # Convert to 1-sided test; restrict to negative test statistics
-            # pvalue = 0.5 * pvalue
-            if statistic >= 0: 
-                pvalue = 1.0
-            ps.append(pvalue)
-            clonotypes.append(clonotype)
-    reject, pvals_corrected, _, _ = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.10)
-    clonotypes_mut_rate_inc[patient_code] = list(itertools.compress(clonotypes, reject))
-    clonotypes_mut_rate_inc_ps[patient_code] = pd.DataFrame({"clonotype": clonotypes, 
-                                                             "p": ps,
-                                                             "pvals_corrected": pvals_corrected,
-                                                             "reject": reject})
-
-#
-# Determine overlaps with known mAB clonotypes
-#
-for clonotypes in clonotypes_expanded.values():
-    print(set(clonotypes) & set(mAb_df[analysis_level]))
-# for clonotypes in clonotypes_mut_rate_inc.values():
-    # print(set(clonotypes) & set(mAb_df[analysis_level]))
-
-# For each clonotype, get status:
-# Expanded?
-# Present in naive rep d0?
-# Present in MBC d0?
-# Overlap with known mAB at
-    # V-Gene
-    # VJ level
-results = pd.DataFrame({
-    "clonotype": rep_freq_joined.index 
-})
-results["expanded"] = results["clonotype"].apply(lambda x:
-    list(filter(lambda p: x in clonotypes_expanded[p], patient_codes))
-)
-# results["mutated"] = results["clonotype"].apply(lambda x:
-    # list(filter(lambda p: x in clonotypes_mut_rate_inc[p], patient_codes))
-# )
-naive_reps_d0 = dict(zip(
-    patient_codes,
-    (set(get_naive_rep(summary_df).query("day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
-)) 
-pbmc_reps_d0 = dict(zip(
-    patient_codes,
-    (set(summary_df.query("cell_type == 'PBMCs' & day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
-)) 
-results["in_naive_d0"] = results["clonotype"].apply(lambda x:
-    list(filter(lambda p: x in naive_reps_d0[p], patient_codes))
-)
-results["in_pbmc_d0"] = results["clonotype"].apply(lambda x:
-    list(filter(lambda p: x in pbmc_reps_d0[p], patient_codes))
-)
-results["known_mAb_analysis_level"] = results["clonotype"].apply(lambda x:
-    list(mAb_df.loc[mAb_df[analysis_level] == x, "Ab.Name"])
-)
-# results["in_MBC_d0"]
-# results["in_MBC_d140"]
-results["isotype_rep1"] = results["clonotype"].apply(lambda x:
-    collections.Counter(
-        itertools.chain(*
-            map(
-                lambda x: dict((i, 1/len(x)) for i in x), # Split into fractional counts for multi-isotype clones
-                rep1.loc[rep1[analysis_level] == x, "isotypes"]
+# TODO
+if 0:
+    #
+    # For each clonotype, get status:
+    #
+    results = pd.DataFrame({
+        "clonotype": rep_freq_joined.index 
+    })
+    results["expanded"] = results["clonotype"].apply(lambda x:
+        list(filter(lambda p: x in clonotypes_expanded[p], patient_codes))
+    )
+    naive_reps_d0 = dict(zip(
+        patient_codes,
+        (set(get_naive_rep(summary_df).query("day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
+    )) 
+    pbmc_reps_d0 = dict(zip(
+        patient_codes,
+        (set(summary_df.query("cell_type == 'PBMCs' & day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
+    )) 
+    results["in_naive_d0"] = results["clonotype"].apply(lambda x:
+        list(filter(lambda p: x in naive_reps_d0[p], patient_codes))
+    )
+    results["in_pbmc_d0"] = results["clonotype"].apply(lambda x:
+        list(filter(lambda p: x in pbmc_reps_d0[p], patient_codes))
+    )
+    results["known_mAb_analysis_level"] = results["clonotype"].apply(lambda x:
+        list(mAb_df.loc[mAb_df[analysis_level] == x, "Ab.Name"])
+    )
+    # results["in_MBC_d0"]
+    # results["in_MBC_d140"]
+    results["isotype_rep1"] = results["clonotype"].apply(lambda x:
+        collections.Counter(
+            itertools.chain(*
+                map(
+                    lambda x: dict((i, 1/len(x)) for i in x), # Split into fractional counts for multi-isotype clones
+                    rep1.loc[rep1[analysis_level] == x, "isotypes"]
+                )
             )
         )
     )
-)
-results["isotype_rep2"] = results["clonotype"].apply(lambda x:
-    collections.Counter(
-        itertools.chain(*
-            map(
-                lambda x: dict((i, 1/len(x)) for i in x), # Split into fractional counts for multi-isotype clones
-                rep2.loc[rep2[analysis_level] == x, "isotypes"]
+    results["isotype_rep2"] = results["clonotype"].apply(lambda x:
+        collections.Counter(
+            itertools.chain(*
+                map(
+                    lambda x: dict((i, 1/len(x)) for i in x), # Split into fractional counts for multi-isotype clones
+                    rep2.loc[rep2[analysis_level] == x, "isotypes"]
+                )
             )
         )
     )
+
+    results[results.loc[:, ["expanded"]].apply(any, axis=1)]
+
+#
+# Do expanded clonotypes have a higher mutational frequency on average?
+# Plot mutational freqs of clones, group by patient, hue by expansion
+#
+data = rep2
+data = data.assign(expanded=
+    data.apply(lambda x: x[analysis_level] in set(clonotypes_expanded[x['patient_code']][analysis_level]), axis=1)
 )
-
-results[results.loc[:, ["expanded"]].apply(any, axis=1)]
-
-#
-# Expanded clonotypes have a higher mutational frequency on average.
-# TODO add dots for known clonotypes
-#
-expanded_clonotypes = results.loc[results["expanded"].astype(bool), "clonotype"]
-rep1_mut_freqs = rep1.loc[(rep1[analysis_level].isin(expanded_clonotypes)), "mut_freq_vj"]
-rep2_mut_freqs = rep2.loc[(rep2[analysis_level].isin(expanded_clonotypes)), "mut_freq_vj"]
-combined_mut_freqs = pd.concat([rep1_mut_freqs, rep2_mut_freqs], keys=["rep1", "rep2"]).reset_index()
-fig, axes = plt.subplots()
-sns.boxplot(x="mut_freq_vj", y="level_0", data=combined_mut_freqs, ax=axes)
-axes.set_title(scipy.stats.mannwhitneyu(rep1_mut_freqs, rep2_mut_freqs))
+fig, ax = plt.subplots()
+sns.violinplot(x="mut_freq_vj", y="patient_code", hue="expanded", data=data, ax=ax, orient="h")
+# sns.stripplot(x="mut_freq_vj", y="patient_code", hue="expanded", 
+        # data=data[data[analysis_level].isin(mAb_df[analysis_level])], 
+        # ax=ax, orient="h", split=True)
+# Perform mann whitney u test for difference in mean rank
+title_parts = []
+for patient_code in patient_codes:
+    if len(clonotypes_expanded[patient_code]):
+        _, p_mw = scipy.stats.mannwhitneyu(
+            data.loc[(data['patient_code'] == patient_code) & ~data['expanded'], "mut_freq_vj"],
+            data.loc[(data['patient_code'] == patient_code) & data['expanded'], "mut_freq_vj"])
+        rank_ne, rank_e, med_ne, med_e = get_mean_ranks(
+            data.loc[(data['patient_code'] == patient_code) & ~data['expanded'], "mut_freq_vj"],
+            data.loc[(data['patient_code'] == patient_code) & data['expanded'], "mut_freq_vj"])
+        title_parts.append(" ".join(str(x) for x in [patient_code, p_mw, rank_ne, rank_e, med_ne, med_e]))
+ax.set_title("\n".join(title_parts))
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expanded_clonotypes_mut_freq.pdf")
 
 #
-# Horizontal swarm plot of log p value
-#
-# clonotype_ps_combined = pd.concat(clonotypes_expanded_ps.values(), keys=clonotypes_expanded_ps.keys(), names=["patient_code"]).reset_index()
-clonotype_ps_combined = clonotypes_expanded_ps_combined
-# clonotype_mut_ps_combined = pd.concat(clonotypes_mut_rate_inc_ps.values(), keys=clonotypes_mut_rate_inc_ps.keys(), names=["patient_code"]).reset_index()
-clonotype_ps_combined['known_mAb_clonotype'] = clonotype_ps_combined["clonotype"].isin(mAb_df[analysis_level])
-# clonotype_ps_combined = clonotype_ps_combined.merge(
-        # clonotype_mut_ps_combined[['patient_code', 'clonotype', 'p', 'pvals_corrected', 'reject']],
-        # how='left',
-        # on=['patient_code', 'clonotype'],
-        # suffixes=['_expand', "_mut"]
-# )
-clonotype_ps_combined['patient_code'] = clonotype_ps_combined['patient_code'].astype("category", ordered=True)
-
-#
-fig, axes = plt.subplots(figsize=(16, 10))
-# axes.set(xscale="log")
-# g = sns.swarmplot(x="pvals_corrected_expand", y="patient_code", hue="known_mAb_clonotype", data=clonotype_ps_combined[clonotype_ps_combined['pvals_corrected_expand'] < 0.5], ax=axes)
-g = sns.swarmplot(x="pvals_corrected", y="patient_code", hue="known_mAb_clonotype", data=clonotype_ps_combined[clonotype_ps_combined['pvals_corrected'] < 0.5], ax=axes)
-axes.axvline(x=0.05, color="black", linestyle="--")
-fig.savefig("../team115_lustre/1_analyse_clonotypes/expand_ps_swarmplot.pdf")
-
-# TODO now?
-# plot actual p value
+# Manhattan plot, p value for expansion
 # 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 16), sharex=True, gridspec_kw={'height_ratios':[1, 5.5]})
+clonotypes_expanded_df['is_known_mAb_clonotype'] = clonotypes_expanded_df['known_mAb'].astype(bool)
+#
+# Determine significance threshold line
+signif = clonotypes_expanded_df["signif"]
+max_positive = max(clonotypes_expanded_df["p"][signif])
+min_negative = min(clonotypes_expanded_df["p"][~signif])
+thresh = np.mean([-np.log10(max_positive), -np.log10(min_negative)])
+#
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12), sharex=True, gridspec_kw={'height_ratios':[1, 10]})
 # Plot same dataset on two subplots
 jitter_rad = 0.35
-g1 = sns.stripplot(y=-np.log10(clonotype_ps_combined["p"]), x="patient_code",
-        data=clonotype_ps_combined, ax=ax1, jitter=jitter_rad, hue="known_mAb_clonotype", split=True)
-g2 = sns.stripplot(y=-np.log10(clonotype_ps_combined["p"]), x="patient_code",
-        data=clonotype_ps_combined, ax=ax2, jitter=jitter_rad, hue="known_mAb_clonotype", split=True)
+g1 = sns.stripplot(y=-np.log10(clonotypes_expanded_df["p_corrected"]), x="patient_code",
+        data=clonotypes_expanded_df, ax=ax1, jitter=jitter_rad, 
+        hue="is_known_mAb_clonotype", split=True)
+g2 = sns.stripplot(y=-np.log10(clonotypes_expanded_df["p_corrected"]), x="patient_code",
+        data=clonotypes_expanded_df, ax=ax2, jitter=jitter_rad, 
+        hue="is_known_mAb_clonotype", split=True)
 # Zoom in on separate parts of dataset
-ax1.set_ylim([215, 225])
+ax1.set_ylim([210, 220])
 ax1.xaxis.set_visible(False) # Remove x axis labels from top subplot
-ax1.set_yticks([220]) # Keep tick spacing consistent between subplots
+ax1.set_yticks([210, 220]) # Keep tick spacing consistent between subplots
 ax1.set_ylabel("") # Remove y axis label
-ax2.set_ylim([0, 55])
+ax2.set_ylim([0, 90])
 ax2.legend().set_visible(False)
-
-# Find significance thresholds for each individual
-i = 0
-ys, xmins, xmaxes = [], [], []
-for p in clonotype_ps_combined["patient_code"].cat.categories:
-    max_positive = clonotype_ps_combined.loc[
-            (clonotype_ps_combined['patient_code'] == p) &
-            (clonotype_ps_combined['reject_expand'])
-            , "p_expand"].max()
-    min_negative = clonotype_ps_combined.loc[
-            (clonotype_ps_combined['patient_code'] == p) &
-            (~clonotype_ps_combined['reject_expand'])
-            , "p_expand"].min()
-    thresh = np.mean([-np.log10(max_positive), -np.log10(min_negative)])
-    if not np.isnan(thresh):
-        ys.append(thresh)
-        xmins.append(i-jitter_rad)
-        xmaxes.append(i+jitter_rad)
-    i += 1
-ax2.hlines(y=ys, xmin=xmins, xmax=xmaxes, colors='k', linestyles='--')
-
-# A single signif line
-foo = clonotype_ps_combined["reject"]
-max_positive = max(clonotype_ps_combined["p"][foo])
-min_negative = min(clonotype_ps_combined["p"][~foo])
-thresh = np.mean([-np.log10(max_positive), -np.log10(min_negative)])
+# Add signif line
 ax2.axhline(y=thresh, color="black", linestyle="--")
 fig.tight_layout()
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expand_p_val_manhattan.pdf")
 
-# TODO add labels for top3 clonotypes in each sample
-[ax.text(p[0], p[1]+50, p[1], color='g') for p in zip(ax.get_xticks(), num_records_yob)]
+#
+# Clonotype sharing, indicative of convergent response
+#
+
+# TODO now : stacked bar
+# TODO Two timepoint stacked area plot of clonotype proportions (top 100)
+
+rep_prop_joined = rep_freq_joined.apply(lambda x: x/sum(x))
+# Get clonotypes with the highest proportion of repertoire taken up at d140
+top_prop_clonotypes = rep_freq_joined.apply(lambda x: x/sum(x)).loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']].apply(sum, axis=1).sort_values().tail(20).index
 
 
+plt.stackplot([0, 140], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ["1017_rep1", "1017_rep2"]])
+# plt.ylim([0, 1])
+
+plt.stackplot([0, 140], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ["2207_rep1", "2207_rep2"]])
+# plt.ylim([0, 1])
+
+plt.stackplot([1, 2, 3], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']])
+# plt.ylim([0, 1])
+
+plt.figure()
+plt.stackplot([1, 2, 3], rep_prop_joined.reindex(mAb_df["clonotype"]).dropna().loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']])
+# plt.ylim([0, 1])
+plt.savefig("../team115_lustre/1_analyse_clonotypes/known_mab_clonotype_stacked_area.pdf")
+
+# Trying factorplot instead
+foo = rep_prop_joined.reindex(mAb_df["clonotype"]).dropna().loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']]
+bar = pd.melt(foo.reset_index(), id_vars=["clonotype"])
+g = sns.factorplot(x="clonotype", y="value", hue="patient_code", data=bar, kind="bar", palette="muted")
 
 
-# Scatter plot using both expansion and mut rate p values
-# g = sns.lmplot(
-    # x="p_expand", y="p_mut", data=clonotype_ps_combined, 
-    # hue="known_mAb_clonotype", col="patient_code", fit_reg=False,
-    # x_jitter=0.01, y_jitter=0.01, palette=sns.color_palette('colorblind')[1:]
-# )
-# g.savefig("../team115_lustre/1_analyse_clonotypes/expand_mut_ps_lmplot.pdf")
 
 # TODO explore certain clonotypes
 
@@ -453,36 +397,6 @@ rep_freq_joined[rep_freq_joined.index.isin(mAb_df[analysis_level])].apply(sum) /
 rep_freq_joined[rep_freq_joined.index.isin(mAb_df[analysis_level])].apply(sum) / rep_freq_joined.apply(sum)
 
 rep_freq_joined[rep_freq_joined.index.isin(mAb_df[analysis_level])]
-
-#
-# Clonotype sharing, indicative of convergent response
-#
-
-# TODO Two timepoint stacked area plot of clonotype proportions (top 100)
-
-rep_prop_joined = rep_freq_joined.apply(lambda x: x/sum(x))
-# Get clonotypes with the highest proportion of repertoire taken up at d140
-top_prop_clonotypes = rep_freq_joined.apply(lambda x: x/sum(x)).loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']].apply(sum, axis=1).sort_values().tail(20).index
-
-
-plt.stackplot([0, 140], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ["1017_rep1", "1017_rep2"]])
-# plt.ylim([0, 1])
-
-plt.stackplot([0, 140], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ["2207_rep1", "2207_rep2"]])
-# plt.ylim([0, 1])
-
-plt.stackplot([1, 2, 3], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']])
-# plt.ylim([0, 1])
-
-plt.figure()
-plt.stackplot([1, 2, 3], rep_prop_joined.reindex(mAb_df["clonotype"]).dropna().loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']])
-# plt.ylim([0, 1])
-plt.savefig("../team115_lustre/1_analyse_clonotypes/known_mab_clonotype_stacked_area.pdf")
-
-# Trying factorplot instead
-foo = rep_prop_joined.reindex(mAb_df["clonotype"]).dropna().loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']]
-bar = pd.melt(foo.reset_index(), id_vars=["clonotype"])
-g = sns.factorplot(x="clonotype", y="value", hue="patient_code", data=bar, kind="bar", palette="muted")
 
 # TODO Heatmap of clonotype sharing
 
