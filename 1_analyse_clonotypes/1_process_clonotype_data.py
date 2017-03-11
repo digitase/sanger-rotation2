@@ -17,6 +17,7 @@ import itertools
 import functools
 
 # Import (or reload) helper functions
+import stackedBarGraph
 import imp
 import process_clonotype_data_helpers
 imp.reload(process_clonotype_data_helpers)
@@ -294,7 +295,8 @@ for patient_code in patient_codes:
         rank_ne, rank_e, med_ne, med_e = get_mean_ranks(
             data.loc[(data['patient_code'] == patient_code) & ~data['expanded'], "mut_freq_vj"],
             data.loc[(data['patient_code'] == patient_code) & data['expanded'], "mut_freq_vj"])
-        title_parts.append(" ".join(str(x) for x in [patient_code, p_mw, rank_ne, rank_e, med_ne, med_e]))
+        # title_parts.append(" ".join(str(x) for x in [patient_code, p_mw, rank_ne, rank_e, med_ne, med_e]))
+        title_parts.append(" ".join(str(x) for x in ["patient: ", patient_code, "p = ", p_mw]))
 ax.set_title("\n".join(title_parts))
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expanded_clonotypes_mut_freq.pdf")
 
@@ -331,47 +333,87 @@ fig.tight_layout()
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expand_p_val_manhattan.pdf")
 
 #
+# Show proportion of repertoire taken up by certain clonotypes
+# e.g. known mAb clonotypes
+#
+# Choose set of clonotypes to plot
+clonotypes_to_plot = mAb_df[analysis_level].unique()
+props = rep_prop_joined[rep_prop_joined.index.isin(clonotypes_to_plot)].transpose()
+# Sort samples such that patients are adjacent
+props = props.loc[props.index.sort_values()]
+# Sort clonotypes by max prop in repertoire
+props = props.loc[:, props.apply(sum).sort_values(ascending=False).index]
+# Plot stacked bars
+sbg = stackedBarGraph.StackedBarGrapher()
+fig, ax = plt.subplots(figsize=(10, 10))
+stack_colors = plt.cm.Set2(np.linspace(0, 1, props.shape[1]))
+sbg.stackedBarPlot(
+    ax,
+    props,
+    stack_colors,
+    props.index, 
+    gap=0.1,
+    scale=False,
+    xlabel="Sample repertoire",
+    ylabel="Proportion of repertoire"
+)
+# Remove vertical gridlines
+ax.xaxis.grid(False) 
+# add lines separating patients
+plt.axvline(x=1.5, color="w", linestyle="-")
+plt.axvline(x=3.5, color="w", linestyle="-")
+# Add legend, showing samples in which expansion occurred
+legends = []
+i = 0
+for column in props.columns: 
+    label = column
+    for patient_code in patient_codes:
+        if label in set(clonotypes_expanded[patient_code][analysis_level]):
+            label = label + ", Expanded in: " + str(patient_code)
+    legends.append(matplotlib.patches.Patch(color=stack_colors[i], label=label))
+    i+=1
+plt.legend(handles=legends, loc='best')
+#
+fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_stacked_bars.pdf")
+
+#
 # Clonotype sharing, indicative of convergent response
 #
-
-# TODO now : stacked bar
-# TODO Two timepoint stacked area plot of clonotype proportions (top 100)
-
-rep_prop_joined = rep_freq_joined.apply(lambda x: x/sum(x))
-# Get clonotypes with the highest proportion of repertoire taken up at d140
-top_prop_clonotypes = rep_freq_joined.apply(lambda x: x/sum(x)).loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']].apply(sum, axis=1).sort_values().tail(20).index
-
-
-plt.stackplot([0, 140], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ["1017_rep1", "1017_rep2"]])
-# plt.ylim([0, 1])
-
-plt.stackplot([0, 140], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ["2207_rep1", "2207_rep2"]])
-# plt.ylim([0, 1])
-
-plt.stackplot([1, 2, 3], rep_prop_joined.reindex(top_prop_clonotypes).loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']])
-# plt.ylim([0, 1])
-
-plt.figure()
-plt.stackplot([1, 2, 3], rep_prop_joined.reindex(mAb_df["clonotype"]).dropna().loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']])
-# plt.ylim([0, 1])
-plt.savefig("../team115_lustre/1_analyse_clonotypes/known_mab_clonotype_stacked_area.pdf")
-
-# Trying factorplot instead
-foo = rep_prop_joined.reindex(mAb_df["clonotype"]).dropna().loc[:, ['1017_rep2', '1019_rep2', '2207_rep2']]
-bar = pd.melt(foo.reset_index(), id_vars=["clonotype"])
-g = sns.factorplot(x="clonotype", y="value", hue="patient_code", data=bar, kind="bar", palette="muted")
-
-
+# Sharing of expanded clonotypes: venn diagram
+#
+fig, ax = plt.subplots(figsize=(10, 10))
+# (100, 010, 110, 001, 101, 011, 111)
+v = matplotlib_venn.venn3(subsets=(1, 1, 0, 1, 0, 0, 0), set_labels=patient_codes)
+# for x in v.subset_labels:
+    # x.set_text("0")
+v.get_label_by_id('100').set_text(len(clonotypes_expanded[patient_codes[0]]))
+v.get_label_by_id('010').set_text(len(clonotypes_expanded[patient_codes[1]]))
+v.get_label_by_id('001').set_text(len(clonotypes_expanded[patient_codes[2]]))
+#
+# plt.annotate(" \n ", 
+    # xy=v.get_label_by_id('100').get_position(), xytext=(0, -120), size=11,
+    # ha='center', va='top', textcoords='offset points', bbox=dict(boxstyle='round,pad=0.5', fc='gray', alpha=0.1)
+# )
+plt.annotate("\n".join(list(clonotypes_expanded[patient_codes[1]][analysis_level].sort_values())), 
+    xy=v.get_label_by_id('010').get_position(), xytext=(0, -120), size=11,
+    ha='center', va='top', textcoords='offset points', bbox=dict(boxstyle='round,pad=0.5', fc='gray', alpha=0.1)
+)
+plt.annotate("\n".join(list(clonotypes_expanded[patient_codes[2]][analysis_level].sort_values())), 
+    xy=v.get_label_by_id('001').get_position(), xytext=(0, -120), size=11,
+    ha='center', va='top', textcoords='offset points', bbox=dict(boxstyle='round,pad=0.5', fc='gray', alpha=0.1)
+)
+plt.title("Venn diagram of expanded clonotypes per patient")
+fig.savefig("../team115_lustre/1_analyse_clonotypes/expanded_clonotype_venn.pdf")
 
 # TODO explore certain clonotypes
 
-IGHV3-33.IGHJ4.CDR3_len16
+# IGHV3-33.IGHJ4.CDR3_len16
 
 rep_freq_joined.query("clonotype == 'IGHV3-23.IGHJ4.CDR3_len16'")
 
 rep_freq_joined.query("clonotype == 'IGHV4-39.IGHJ4.CDR3_len15'")
 
-IGHV4-39.IGHJ4.CDR3_len15
+# IGHV4-39.IGHJ4.CDR3_len15
 rep_freq_joined.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
 
 # ab r5
@@ -381,8 +423,6 @@ rep_freq_joined.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
 
 clonotypes_expanded_ps_combined.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
 
-
-
 rep_freq_joined.apply(lambda x: x/sum(x)).apply(max, axis=1).sort_values().tail()
 
 rep_freq_joined.apply(lambda x: x/sum(x)).sort_values(["1019_rep2"]).tail()
@@ -390,13 +430,6 @@ rep_freq_joined.apply(lambda x: x/sum(x)).sort_values(["1019_rep2"]).tail()
 rep_freq_joined.apply(lambda x: x/sum(x)).sort_values(["2207_rep2"]).tail()
 
 rep_freq_joined.apply(lambda x: x/sum(x)).query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
-
-# TODO
-# Proportions of the repertoire taken up by known clonotypes
-rep_freq_joined[rep_freq_joined.index.isin(mAb_df[analysis_level])].apply(sum) / rep_freq_joined.apply(sum)
-rep_freq_joined[rep_freq_joined.index.isin(mAb_df[analysis_level])].apply(sum) / rep_freq_joined.apply(sum)
-
-rep_freq_joined[rep_freq_joined.index.isin(mAb_df[analysis_level])]
 
 # TODO Heatmap of clonotype sharing
 
@@ -423,17 +456,8 @@ fig = plt.figure()
 g = sns.heatmap(dist, annot=True, fmt=".2f", linewidths=.5, square=True, mask=mask)
 fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_sharing_heatmap.pdf")
 
-# TODO
-# workspace below
-
-# % TODO occuptation of rep by known clonotpye abs
-
-# Paired bar plots of isotype proportions for clonotypes that are expanded and mutated, vs clonotypes that are not
-
-isotype_freqs = foo.groupby('did_expand').apply(lambda x: functools.reduce(lambda x, y: x+y, x["isotype"]))
-
-# Pies of isotype freq by mutation and expansion
 # TODO 
+# Pies of isotype freq by mutation and expansion
 # convert to Pies of isotype freq by mutation and known
 
 # Em_clono = results[(results["expanded"].astype(bool) & np.invert(results["mutated"].astype(bool)))]
@@ -476,48 +500,6 @@ ax4.set_title("em (n = {}, nKnown = {})".format(len(em_clono), sum(em_clono["kno
 f.savefig("../team115_lustre/1_analyse_clonotypes/pie.pdf")
 
 # TODO
-# Boxplots: p value of clonotype by the number of samples a clonotype is present in.
-# Do this at d0 and d140
-
-sample_names = ["LEA_S" + str(n) for n in [1, 11, 15]]
-sharing_count_d0 = count_clonotype_cpm_normed.loc[:, sample_names].apply(np.count_nonzero, axis=1)
-sample_names = ["LEA_S" + str(n) for n in [3, 9, 7]]
-sharing_count_d140 = count_clonotype_cpm_normed.loc[:, sample_names].apply(np.count_nonzero, axis=1)
-foo = results.merge(
-    pd.DataFrame({'sharing_count_d0': sharing_count_d0, 'sharing_count_d140': sharing_count_d140}),
-    left_on='clonotype',
-    right_index=True
-)
-foo = results.merge(
-    clonotype_ps_combined.groupby('clonotype').apply(lambda x: np.min(x['p_expand'])).to_frame('mean_p_expand'),
-    left_on='clonotype',
-    right_index=True
-)
-
-def get_num_containing_samples(clonotype, rep, analysis_level="clonotype"):
-    return len(rep.loc[rep[analysis_level] == clonotype, "patient_code"].unique())
-sample_names = ["LEA_S" + str(n) for n in [1, 11, 15]]
-sharing_count_d0 = np.array(count_clonotype_cpm_normed.loc[:, sample_names].index.map(lambda x: get_num_containing_samples(x, rep1, analysis_level)))
-sample_names = ["LEA_S" + str(n) for n in [3, 9, 7]]
-sharing_count_d140 = np.array(count_clonotype_cpm_normed.loc[:, sample_names].index.map(lambda x: get_num_containing_samples(x, rep1, analysis_level)))
-sharing_count_combined = pd.DataFrame({'sharing_count_d0': sharing_count_d0, 'sharing_count_d140': sharing_count_d140})
-sharing_count_combined.index = count_clonotype_cpm_normed.index
-foo = results.merge(
-    sharing_count_combined,
-    left_on='clonotype',
-    right_index=True
-)
-foo = foo.merge(
-    clonotype_ps_combined.groupby('clonotype').apply(lambda x: np.mean(x['p_expand'])).to_frame('mean_p_expand'),
-    left_on='clonotype',
-    right_index=True
-)
-foo['did_expand'] = foo['expanded'].astype(bool)
-
-sns.swarmplot(x="sharing_count_d0", y="mean_p_expand", data=foo, hue='did_expand', split=True)
-sns.swarmplot(x="sharing_count_d140", y="mean_p_expand", data=foo, hue='did_expand', split=True)
-
-# TODO
 # Evaluate repertoire sharing at CDR3 seq level
 
 # TODO graph proving lack of response in 1017 is not due to lack of clonotypes in naive repertoire
@@ -525,378 +507,4 @@ sns.swarmplot(x="sharing_count_d140", y="mean_p_expand", data=foo, hue='did_expa
 
 # TODO are shared clonotypes the same?
 # Plot p value vs amount of sharing
-
-# TODO PCA
-# import sklearn.decomposition 
-# pca = sklearn.decomposition.PCA(n_components=2)
-# pca.fit(foo.transpose())
-# bar = pca.transform(foo.transpose())
-
-# TODO
-# reorganisation required below
-
-# In[156]:
-
-def get_clonotype_mean_mut_freq(summary_df, var="mut_freq_vj"):
-    '''For each clonotype present, get mean mutational freq per base pair
-    '''
-    return summary_df.groupby("clonotype")[var].mean()
-#
-
-def get_clonotype_mut_freqs(summary_df, var="mut_freq_vj"):
-    '''For each clonotype present, get the mutational freqs of the clonotypes
-    '''
-    return summary_df.groupby("clonotype", "patient_code")[var]
-
-def get_clonotype_mut_freqs(df, clonotype_field="clonotype", groups=None, prop=False, fillna=True):
-    if groups is None:
-        freqs = df.groupby([clonotype_field]).apply(len)
-    else:
-        freqs = df.groupby([clonotype_field] + groups).apply(len).unstack()
-    if fillna:
-        freqs = freqs.fillna(0)
-    if prop:
-        if len(freqs.shape) > 1:
-            return freqs.apply(lambda x: x/sum(x)) 
-        else:
-            return freqs/sum(freqs) 
-    else:
-        return freqs
-
-rep1_mut_rate = get_clonotype_mean_mut_freq(rep1)
-rep2_mut_rate = get_clonotype_mean_mut_freq(rep2)
-
-rep1_freq = get_clonotype_freq(rep1, "VJ-GENE", ["patient_code"])
-rep2_freq = get_clonotype_freq(rep2, "VJ-GENE", ["patient_code"])
-#
-rep_freq_joined = rep1_freq.join(rep2_freq, how='outer', lsuffix="_rep1", rsuffix="_rep2").fillna(0)
-
-
-
-# Filter by those detected in the naive rep of individuals?
-
-#
-# Diversity of a single repertoire
-# Hill curves
-#
-# Calculate Hill curve
-def calc_hill_curve(counts, max_q=15, step=0.1):
-    '''
-    '''
-    counts = np.array([c for c in counts if not c == 0])
-    rel_abund = counts/sum(counts)
-    def calc_hill_num(rel_abund, q):
-        # The Shannon index
-        if q == 1.0:
-            return math.exp(-sum(p*math.log(p) for p in rel_abund))
-        # Other Hill numbers
-        else:
-            return math.pow(sum(math.pow(p, q) for p in rel_abund), (1/(1-q)))
-    qs = np.arange(0, max_q, step)
-    return (qs, [calc_hill_num(rel_abund, q) for q in qs])
-#
-# Plot a Hill curve for each repertoire, coding by timepoint and cell type
-colors = dict(zip(sample_info_df["day"].unique(), ['red', 'green', 'blue']))
-fig, axes = plt.subplots(ncols=3, sharey=True, sharex=True, figsize=(16, 10))
-fig.suptitle("Repertoire Hill diversity curves")
-for subplot_n, cell_type in enumerate(sample_info_df["cell_type"].unique()):
-    axes[subplot_n].grid(True)
-    axes[subplot_n].set_title(cell_type)
-    for i in range(sample_info_df.shape[0]):
-        if cell_type == sample_info_df.ix[i, "cell_type"]:
-            sample_name = sample_info_df.ix[i, "Sample_name"]
-            sample_num = sample_info_df.ix[i, "Tag Index"]
-            day = sample_info_df.ix[i, "day"]
-            repertoire = count_clonotype_cpm_normed[sample_name]
-            axes[subplot_n].semilogy(calc_hill_curve(repertoire)[0], calc_hill_curve(repertoire)[1], color=colors[day], label=day)
-            if subplot_n == 0: axes[subplot_n].set_ylabel("Diversity")
-            if subplot_n == 1: axes[subplot_n].set_xlabel("q") 
-            axes[subplot_n].legend()
-fig.savefig('./.output/repertoire_hill_curves.svg')
-
-#
-# paired t test on arcsin transformed proportions of rep per clonotype
-# 
-foo = []
-for i in range(len(rep_prop_arcsin_joined)):
-    foo.append(stats.ttest_rel(rep_prop_arcsin_joined.iloc[i, :3], rep_prop_arcsin_joined.iloc[i, 3:]).pvalue)
-sm.stats.multipletests(foo, method="fdr_bh")
-#
-# For clonotypes within the known mab set only
-foo = []
-for i in range(len(rep_prop_joined)):
-    if (rep_prop_joined.index[i] in mAb_df["V-GENE"].values):
-        foo.append(stats.ttest_rel(rep_prop_arcsin_joined.iloc[i, :3], rep_prop_arcsin_joined.iloc[i, 3:]).pvalue)
-
-#
-# boxplots of prop of repertoire per v gene
-#
-fig, axes = plt.subplots()
-foo = pd.melt(rep1_prop.reset_index(), id_vars=['V-GENE'])
-bar = pd.melt(rep2_prop.reset_index(), id_vars=['V-GENE'])
-baz = pd.concat([foo, bar], keys=["foo", "bar"]).reset_index()
-g = sns.boxplot(x="V-GENE", y="value", hue="level_0", data=baz, palette="PRGn")
-#  g = sns.swarmplot(x="V-GENE", y="value", hue="level_0", data=baz, palette="PRGn", split=True)
-for item in g.get_xticklabels():
-    item.set_rotation(60)
-g
-
-#
-# Hill diversity, 2 reps
-#
-fig, axes = plt.subplots()
-rep1_clonotype_freq = get_clonotype_freq(rep1)
-rep2_clonotype_freq = get_clonotype_freq(rep2)
-rep1_hill_nums = calc_hill_curve(rep1_clonotype_freq.loc[:, 1017])
-rep2_hill_nums = calc_hill_curve(rep2_clonotype_freq.loc[:, 1017])
-axes.semilogy(rep1_hill_nums[0], rep1_hill_nums[1], label="rep1")
-axes.semilogy(rep2_hill_nums[0], rep2_hill_nums[1], label="rep2")
-axes.legend()
-
-#
-# Sharing of clonotypes: venn diagram
-#
-fig, axes = plt.subplots()
-rep1_clonotypes = set(rep1_clonotype_freq.keys())
-rep2_clonotypes = set(rep2_clonotype_freq.keys())
-matplotlib_venn.venn2(subsets=(len(rep1_clonotypes - rep2_clonotypes), len(rep1_clonotypes & rep2_clonotypes), len(rep2_clonotypes - rep1_clonotypes)), set_labels=('rep1', 'rep2'))
-
-#
-# Find those clonotypes with increased Mutational frequencies
-#
-#
-# Scatterplot of clonotype freq
-fig, axes = plt.subplots()
-df = pd.concat({"rep1": rep1_mut_rate, "rep2": rep2_mut_rate}, axis=1)
-g = sns.jointplot("rep1", "rep2", data=df, xlim=(-0.0005, 0.0025), ylim=(-0.0005, 0.0025))
-x0, x1 = g.ax_joint.get_xlim()
-y0, y1 = g.ax_joint.get_ylim()
-lims = [max(x0, y0), min(x1, y1)]
-g.ax_joint.plot(lims, lims, ':k') 
-#
-# Violin plot of mean mut freq
-
-df_complete = df[df["rep1"].notnull() & df["rep2"].notnull()]
-
-#  shared rep: clonotypes that appear in all 3 patients at d140
-shared_rep = rep2.groupby(["clonotype"]).apply(lambda x: len(x["patient_code"].unique()) == 3)
-
-df_complete = df_complete.assign(shared=df_complete.index.isin(shared_rep[shared_rep].index))
-df_complete_wide = pd.melt(df_complete, id_vars=["shared"])
-
-fig, axes = plt.subplots()
-sns.violinplot(x="variable", y="value", data=df_complete_wide, hue="shared", split=False)
-
-#
-# Mutational frequencies of shared clonotypes
-#
-shared = set(rep1["clonotype"]) & set(rep2["clonotype"])
-ps = []
-cs = []
-#
-with np.errstate(divide='raise'):
-    for c in shared:
-        rep1_mut_rates = np.arcsin(np.sqrt(rep1.loc[rep1["clonotype"] == c, "mut_freq_vj"]))
-        rep2_mut_rates = np.arcsin(np.sqrt(rep2.loc[rep2["clonotype"] == c, "mut_freq_vj"]))
-        try:
-            ps.append(sm.stats.ttest_ind(rep1_mut_rates, rep2_mut_rates, alternative="smaller")[1])
-        except FloatingPointError:
-            ps.append(np.nan)
-        cs.append(c)
-bar = sm.stats.multipletests(ps, method="fdr_bh", alpha=0.05)
-np.array(cs)[bar[0]]
-
-
-#
-# Regression of mutational frequency vs clonotype
-#
-
-#
-# Isotype distributions of shared clonotypes
-#
-
-#
-# Difference in proportion of clonotypes
-#
-#  import rpy2
-#  from rpy2.robjects.packages import importr
-#  from rpy2.robjects.vectors import StrVector
-#  import rpy2.robjects as robjects
-#  import rpy2.robjects.packages as rpackages
-#  utils = rpackages.importr('utils')
-#  utils.chooseCRANmirror(ind=1)
-#  utils.install_packages(StrVector(['magrittr']))
-#  IMGTStatClonotype = importr('IMGTStatClonotype')
-
-# Comparison of expanded clonotypes to known sequences
-
-# TODO
-# unfinished below here
-
-#
-# Heatmap: sharing of unique clonotypes between individuals by time and cell type
-#
-foo = summary_df.query("cell_type == 'MBC'").groupby(["day", "patient_code"]).apply(lambda x: set(x["clonotype"]))
-bar = np.reshape([len(x.intersection(y)) for x in foo for y in foo], newshape=(len(foo), len(foo)))
-baz = (foo.keys().levels[0][foo.keys().labels[0]].astype("str")
-    + " "
-    + foo.keys().levels[1][foo.keys().labels[1]].astype("str")
-    #  + " "
-    #  + foo.keys().levels[2][foo.keys().labels[2]].astype("str")
-)
-
-fig, ax = plt.subplots()
-ax.set_xticks(np.arange(22) + 0.5, minor=False)
-ax.set_yticks(np.arange(22) + 0.5, minor=False)
-ax.set_xticklabels(baz, minor=False)
-ax.set_yticklabels(baz, minor=False)
-ax.invert_yaxis()
-ax.xaxis.tick_top()
-#  plt.xticks(rotation=90)
-heatmap = ax.pcolor(bar, cmap=plt.cm.Blues, alpha=0.8)
-
-# In[120]:
-
-adj = pd.DataFrame(bar)
-adj.columns = baz
-adj.to_csv("../team115_lustre/1_analyse_clonotypes/adj.csv", index=False)
-adj
-
-# In[84]:
-
-# Plot clonotype abundances in each cell type, per patient, over time
-
-for patient_code in ["1019", "2207"]:
-# for patient_code in summary_df["patient_code"].unique():
-    # Get clonotype count for each unique clonotype at each timepoint
-    foo = summary_df.query("patient_code == {} & cell_type == 'MBC'".format(patient_code)).groupby(["day", "clonotype"]).apply(lambda x: x["norm_factor"].sum()).unstack().transpose().fillna(0)
-    # Sort by freq at day 140
-    foo.sort_values([140], ascending=True, inplace=True)
-    days = np.array([0, 63, 140])
-    fig, ax = plt.subplots()
-    ax.stackplot(days, foo, baseline="sym", linewidth=0) 
-    fig.set_size_inches(8, 8)
-    plt.title(patient_code)
-    plt.show()
-
-# In[50]:
-
-# Find V-genes that increased in abundance from day 0
-
-
-def var_by_indiv_plots(summary_df, var="V-GENE", cell_type=None, day=None):
-    # Filter out relevant cell types and days
-    if cell_type and all((x in ["plasma", "MBC", "PBMCs"]) for x in cell_type): 
-        summary_df = summary_df[summary_df["cell_type"].isin(cell_type)]
-    if day and all((x in [0, 63, 140]) for x in day): 
-        summary_df = summary_df[summary_df["day"].isin(day)]
-        
-    # Calculate normalised abundance of V genes by patient at day 0
-    v_d0 = summary_df.groupby([var, "patient_code"]).sum()["norm_factor"].unstack().fillna(0)
-    # Convert to proportion of repertoire
-    v_d0_prop = v_d0.apply(lambda x: x/np.sum(x), axis=0)
-
-    # Order V genes by total proportion of repertoire represented and plot
-    v_d0_total_prop_idx = v_d0_prop.sum(axis=1).sort_values(ascending=False).index
-    v_d0.loc[v_d0_total_prop_idx, :].plot(kind="bar", stacked=True, legend=None)
-    # Normalise by total proportion of repertoire represented and replot
-    # v_d0.loc[v_d0_total_prop_idx, :].apply(lambda x: x/np.sum(x), axis=1).plot(kind="bar", stacked=True, legend=None)
-
-    # Order V genes by coefficent of variation and plot
-    v_d0_cv_idx = v_d0.apply(lambda x: np.std(x)/np.mean(x), axis=1).sort_values().index
-    v_d0.loc[v_d0_cv_idx, :].apply(lambda x: x/np.sum(x), axis=1).plot(kind="bar", stacked=True, legend=None)
-
-#
-# Day 0: distribution of clonotypes between individuals
-#
-
-var_by_indiv_plots(summary_df, var="V-GENE", day=[0])
-# var_by_indiv_plots(summary_df, var="V-GENE", cell_type=["plasma"], day=[0]) 
-# var_by_indiv_plots(summary_df, var="V-GENE", cell_type=["MBC"], day=[0]) 
-# var_by_indiv_plots(summary_df, var="V-GENE", cell_type=["PBMCs"], day=[0]) 
-
-# In[282]:
-
-#
-# Day 140: characterisation of long term memory
-# In the memory compartment:
-#     - increase in abundance from d0 to post prime: d28 > d0
-#     - recalled at post boost (day 63): d63 > d0
-#     - still present at d140: d140 > d0
-#     - relatively high mutational freq (i.e. is the above group higher than expected)
-#
-# Compare against the naive repertoire:
-#     IgD/IgM unmutated sequences taken from PBMC samples
-
-def get_v_gene_freq(summary_df):
-    '''For each V gene present, get normalised usage
-    '''
-    return summary_df.groupby("V-GENE")["norm_factor"].sum()
-
-def get_isotype_freq(summary_df):
-    '''For each isotype present, get normalised freq
-    '''
-    isotype_freqs = collections.defaultdict(float)
-    for isotypes, norm_factors in zip(summary_df["isotypes"], summary_df["norm_factor"]):
-        for isotype in isotypes:
-            isotype_freqs[isotype] += norm_factors
-    return pd.Series(isotype_freqs)
-
-def get_clonotype_freq(summary_df):
-    '''For each clonotype present, get normalised abundance
-    '''
-    return summary_df.groupby("clonotype")["norm_factor"].sum()
-
-# Find V-genes that increased in abundance from day 0
-
-# Get naive rep from day 0 
-naive_d0 = get_naive_rep(summary_df).query("day == 0")
-
-# Get plasmoblast rep from day 63
-plasma_d63 = summary_df.query("day == 63 & cell_type == 'plasma'")
-
-# Get memory rep from day 140
-mbc_d140 = summary_df.query("day == 140 & cell_type == 'MBC'")
-
-# In[324]:
-
-naive_d0
-
-# In[296]:
-
-foo = pd.concat([get_v_gene_freq(naive_d0), 
-           get_v_gene_freq(plasma_d63),
-           get_v_gene_freq(mbc_d140)], axis=1)
-foo.columns = ["naive d0", "plasma d63", "MBC d140"] 
-print(foo.shape)
-foo.apply(lambda x: x/np.sum(x)).plot(kind="bar")
-
-# In[281]:
-
-get_v_gene_freq(summary_df.query("day == 140 & cell_type == 'MBC'"))
-
-# In[278]:
-
-# How many clonotypes and V-genes overlap with those from known mAbs?
-print(summary_df.query("day == 140 & cell_type == 'MBC'")["Ab.Name"].value_counts(dropna=False))
-print(summary_df.query("day == 140 & cell_type == 'MBC'")["V-GENE_known_usage"].value_counts(dropna=False))
-
-# In[297]:
-
-summary_df
-
-# In[304]:
-
-print(summary_df["V-GENE"].unique().size)
-print(summary_df["clonotype"].unique().size)
-
-# In[322]:
-
-bar = summary_df.groupby("sample_num").apply(lambda x: x.groupby("clonotype")["norm_factor"].sum())[1]
-sorted(bar)
-
-# In[323]:
-
-baz = summary_df.groupby("sample_num").apply(lambda x: x["clonotype"].value_counts()[1])
-sorted(baz)
 
