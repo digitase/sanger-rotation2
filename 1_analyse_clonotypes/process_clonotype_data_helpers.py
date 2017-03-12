@@ -4,6 +4,8 @@
 import statsmodels.api as sm
 import scipy
 import numpy as np
+import functools
+import collections
 
 #
 # General
@@ -110,4 +112,21 @@ def get_mean_ranks(x1, x2):
     ranks = scipy.stats.rankdata(combined)
     ranks1, ranks2 = ranks[:len(x1)], ranks[len(x1):]
     return np.mean(ranks1), np.mean(ranks2), np.median(x1), np.median(x2)
+
+def get_isotype_distribution(clonotype, rep):
+    '''Get frequencies of isotypes for a clonotype in a repertoire
+
+    Fractional counts are assigned for clones with multiple isotypes.
+    '''
+    def list_to_counter(x):
+        '''Convert a list to a scaled counter
+        '''
+        c = collections.Counter(x)
+        for i in c:
+            c[i] /= len(c)
+        return c
+
+    clones = rep.loc[(rep['clonotype'] == clonotype), 'isotypes']
+    # Add counters to get clonotype freqs
+    return functools.reduce(lambda x, y: x+y, list(clones.apply(list_to_counter)), collections.Counter())
 

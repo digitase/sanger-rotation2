@@ -305,27 +305,29 @@ fig.savefig("../team115_lustre/1_analyse_clonotypes/expanded_clonotypes_mut_freq
 # 
 clonotypes_expanded_df['is_known_mAb_clonotype'] = clonotypes_expanded_df['known_mAb'].astype(bool)
 #
+data = clonotypes_expanded_df[clonotypes_expanded_df['z'] < 0]
+#
 # Determine significance threshold line
-signif = clonotypes_expanded_df["signif"]
-max_positive = max(clonotypes_expanded_df["p"][signif])
-min_negative = min(clonotypes_expanded_df["p"][~signif])
+signif = data["expanded"]
+max_positive = max(data["p"][signif])
+min_negative = min(data["p"][~signif])
 thresh = np.mean([-np.log10(max_positive), -np.log10(min_negative)])
 #
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12), sharex=True, gridspec_kw={'height_ratios':[1, 10]})
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5), sharex=True, gridspec_kw={'height_ratios':[1, 5.5]})
 # Plot same dataset on two subplots
 jitter_rad = 0.35
-g1 = sns.stripplot(y=-np.log10(clonotypes_expanded_df["p_corrected"]), x="patient_code",
-        data=clonotypes_expanded_df, ax=ax1, jitter=jitter_rad, 
+g1 = sns.stripplot(y=-np.log10(data["p"]), x="patient_code",
+        data=data, ax=ax1, jitter=jitter_rad, 
         hue="is_known_mAb_clonotype", split=True)
-g2 = sns.stripplot(y=-np.log10(clonotypes_expanded_df["p_corrected"]), x="patient_code",
-        data=clonotypes_expanded_df, ax=ax2, jitter=jitter_rad, 
+g2 = sns.stripplot(y=-np.log10(data["p"]), x="patient_code",
+        data=data, ax=ax2, jitter=jitter_rad, 
         hue="is_known_mAb_clonotype", split=True)
 # Zoom in on separate parts of dataset
-ax1.set_ylim([210, 220])
+ax1.set_ylim([215, 225])
 ax1.xaxis.set_visible(False) # Remove x axis labels from top subplot
-ax1.set_yticks([210, 220]) # Keep tick spacing consistent between subplots
+ax1.set_yticks([220]) # Keep tick spacing consistent between subplots
 ax1.set_ylabel("") # Remove y axis label
-ax2.set_ylim([0, 90])
+ax2.set_ylim([0, 50])
 ax2.legend().set_visible(False)
 # Add signif line
 ax2.axhline(y=thresh, color="black", linestyle="--")
@@ -375,6 +377,89 @@ for column in props.columns:
 plt.legend(handles=legends, loc='best')
 #
 fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_stacked_bars.pdf")
+
+# 
+# Isotype frequencies of expanded and non expanded isotypes
+#
+
+f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
+
+isotype_props_rep2_e = pd.DataFrame.from_dict(
+        functools.reduce(
+            lambda x, y: x+y, 
+            map(lambda x: get_isotype_distribution(x, rep2), 
+                clonotypes_expanded_df.query("expanded").index)),
+        orient="index").apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
+
+isotype_props_rep2_ne = pd.DataFrame.from_dict(
+        functools.reduce(
+            lambda x, y: x+y, 
+            map(lambda x: get_isotype_distribution(x, rep2), 
+                clonotypes_expanded_df.query("~expanded").index)),
+        orient="index").apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
+
+isotype_props_rep1_all = pd.DataFrame.from_dict(
+        functools.reduce(
+            lambda x, y: x+y, 
+            map(lambda x: get_isotype_distribution(x, rep1), 
+                clonotypes_expanded_df.index)),
+        orient="index").apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
+
+isotype_props_joined = pd.concat(
+        [isotype_props_rep1_all, isotype_props_rep2_ne, isotype_props_rep2_e], 
+        keys=["1. rep1_all", "2. rep2_not_expanded", "3. rep2_expanded"]
+        ).reset_index().drop("level_1", axis=1)
+
+fig, ax = plt.subplots(figsize=(10, 7))
+g = sns.barplot(x="isotype", y="prop", hue="level_0", data=isotype_props_joined.sort_values(["isotype", "level_0"]))
+fig.savefig("../team115_lustre/1_analyse_clonotypes/isotype_props.pdf")
+        
+# TODO possibility: anova by using mean isotype freq instead of summing
+
+#
+# TODO below
+#
+
+# Isotype pies
+
+# Em_clono = results[(results["expanded"].astype(bool) & np.invert(results["mutated"].astype(bool)))]
+# eM_clono = results[(results["mutated"].astype(bool) & np.invert(results["expanded"].astype(bool)))]
+# EM_clono = results[(results["mutated"].astype(bool) & (results["expanded"].astype(bool)))]
+# em_clono = results[np.invert(results["mutated"].astype(bool) & np.invert(results["expanded"].astype(bool)))]
+Em_clono = results[(results["expanded"].astype(bool) & (~results["known_mAb_analysis_level"].astype(bool)))]
+eM_clono = results[(results["known_mAb_analysis_level"].astype(bool) & (~results["expanded"].astype(bool)))]
+EM_clono = results[(results["known_mAb_analysis_level"].astype(bool) & (results["expanded"].astype(bool)))]
+em_clono = results[(~results["known_mAb_analysis_level"].astype(bool) & (~results["expanded"].astype(bool)))]
+
+# Em_clono_sum = functools.reduce(lambda x, y: x+y, list(Em_clono["isotype"]))
+# eM_clono_sum = functools.reduce(lambda x, y: x+y, list(eM_clono["isotype"]))
+# EM_clono_sum = functools.reduce(lambda x, y: x+y, list(EM_clono["isotype"]))
+# em_clono_sum = functools.reduce(lambda x, y: x+y, list(em_clono["isotype"]))
+Em_clono_sum = functools.reduce(lambda x, y: x+y, list(Em_clono["isotype_rep2"]))
+eM_clono_sum = functools.reduce(lambda x, y: x+y, list(eM_clono["isotype_rep2"]))
+EM_clono_sum = functools.reduce(lambda x, y: x+y, list(EM_clono["isotype_rep2"]))
+em_clono_sum = functools.reduce(lambda x, y: x+y, list(em_clono["isotype_rep2"]))
+
+# Keep colors consistent
+isotypes = (Em_clono_sum+ eM_clono_sum+ EM_clono_sum+ em_clono_sum).keys()
+cols = sns.color_palette("hls", n_colors=len(isotypes))
+cols_dict = dict(zip(isotypes, cols))
+
+f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
+ax1.axis("equal")
+ax2.axis("equal")
+ax3.axis("equal")
+ax4.axis("equal")
+ax3.pie(list(Em_clono_sum.values()), labels=Em_clono_sum.keys(), colors=[cols_dict[i] for i in Em_clono_sum.keys()])
+ax2.pie(list(eM_clono_sum.values()), labels=eM_clono_sum.keys(), colors=[cols_dict[i] for i in eM_clono_sum.keys()])
+ax1.pie(list(EM_clono_sum.values()), labels=EM_clono_sum.keys(), colors=[cols_dict[i] for i in EM_clono_sum.keys()])
+ax4.pie(list(em_clono_sum.values()), labels=em_clono_sum.keys(), colors=[cols_dict[i] for i in em_clono_sum.keys()])
+ax3.set_title("Em (n = {}, nKnown = {})".format(len(Em_clono), sum(Em_clono["known_mAb_analysis_level"].astype(bool))))
+ax2.set_title("eM (n = {}, nKnown = {})".format(len(eM_clono), sum(eM_clono["known_mAb_analysis_level"].astype(bool))))
+ax1.set_title("EM (n = {}, nKnown = {})".format(len(EM_clono), sum(EM_clono["known_mAb_analysis_level"].astype(bool))))
+ax4.set_title("em (n = {}, nKnown = {})".format(len(em_clono), sum(em_clono["known_mAb_analysis_level"].astype(bool))))
+
+f.savefig("../team115_lustre/1_analyse_clonotypes/pie.pdf")
 
 #
 # Clonotype sharing, indicative of convergent response
@@ -455,49 +540,6 @@ mask[np.tril_indices_from(mask)] = False
 fig = plt.figure()
 g = sns.heatmap(dist, annot=True, fmt=".2f", linewidths=.5, square=True, mask=mask)
 fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_sharing_heatmap.pdf")
-
-# TODO 
-# Pies of isotype freq by mutation and expansion
-# convert to Pies of isotype freq by mutation and known
-
-# Em_clono = results[(results["expanded"].astype(bool) & np.invert(results["mutated"].astype(bool)))]
-# eM_clono = results[(results["mutated"].astype(bool) & np.invert(results["expanded"].astype(bool)))]
-# EM_clono = results[(results["mutated"].astype(bool) & (results["expanded"].astype(bool)))]
-# em_clono = results[np.invert(results["mutated"].astype(bool) & np.invert(results["expanded"].astype(bool)))]
-Em_clono = results[(results["expanded"].astype(bool) & (~results["known_mAb_analysis_level"].astype(bool)))]
-eM_clono = results[(results["known_mAb_analysis_level"].astype(bool) & (~results["expanded"].astype(bool)))]
-EM_clono = results[(results["known_mAb_analysis_level"].astype(bool) & (results["expanded"].astype(bool)))]
-em_clono = results[(~results["known_mAb_analysis_level"].astype(bool) & (~results["expanded"].astype(bool)))]
-
-# Em_clono_sum = functools.reduce(lambda x, y: x+y, list(Em_clono["isotype"]))
-# eM_clono_sum = functools.reduce(lambda x, y: x+y, list(eM_clono["isotype"]))
-# EM_clono_sum = functools.reduce(lambda x, y: x+y, list(EM_clono["isotype"]))
-# em_clono_sum = functools.reduce(lambda x, y: x+y, list(em_clono["isotype"]))
-Em_clono_sum = functools.reduce(lambda x, y: x+y, list(Em_clono["isotype_rep2"]))
-eM_clono_sum = functools.reduce(lambda x, y: x+y, list(eM_clono["isotype_rep2"]))
-EM_clono_sum = functools.reduce(lambda x, y: x+y, list(EM_clono["isotype_rep2"]))
-em_clono_sum = functools.reduce(lambda x, y: x+y, list(em_clono["isotype_rep2"]))
-
-# Keep colors consistent
-isotypes = (Em_clono_sum+ eM_clono_sum+ EM_clono_sum+ em_clono_sum).keys()
-cols = sns.color_palette("hls", n_colors=len(isotypes))
-cols_dict = dict(zip(isotypes, cols))
-
-f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
-ax1.axis("equal")
-ax2.axis("equal")
-ax3.axis("equal")
-ax4.axis("equal")
-ax3.pie(list(Em_clono_sum.values()), labels=Em_clono_sum.keys(), colors=[cols_dict[i] for i in Em_clono_sum.keys()])
-ax2.pie(list(eM_clono_sum.values()), labels=eM_clono_sum.keys(), colors=[cols_dict[i] for i in eM_clono_sum.keys()])
-ax1.pie(list(EM_clono_sum.values()), labels=EM_clono_sum.keys(), colors=[cols_dict[i] for i in EM_clono_sum.keys()])
-ax4.pie(list(em_clono_sum.values()), labels=em_clono_sum.keys(), colors=[cols_dict[i] for i in em_clono_sum.keys()])
-ax3.set_title("Em (n = {}, nKnown = {})".format(len(Em_clono), sum(Em_clono["known_mAb_analysis_level"].astype(bool))))
-ax2.set_title("eM (n = {}, nKnown = {})".format(len(eM_clono), sum(eM_clono["known_mAb_analysis_level"].astype(bool))))
-ax1.set_title("EM (n = {}, nKnown = {})".format(len(EM_clono), sum(EM_clono["known_mAb_analysis_level"].astype(bool))))
-ax4.set_title("em (n = {}, nKnown = {})".format(len(em_clono), sum(em_clono["known_mAb_analysis_level"].astype(bool))))
-
-f.savefig("../team115_lustre/1_analyse_clonotypes/pie.pdf")
 
 # TODO
 # Evaluate repertoire sharing at CDR3 seq level
