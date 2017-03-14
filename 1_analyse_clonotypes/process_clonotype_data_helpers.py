@@ -6,6 +6,7 @@ import scipy
 import numpy as np
 import functools
 import collections
+import math
 
 #
 # General
@@ -129,4 +130,12 @@ def get_isotype_distribution(clonotype, rep):
     clones = rep.loc[(rep['clonotype'] == clonotype), 'isotypes']
     # Add counters to get clonotype freqs
     return functools.reduce(lambda x, y: x+y, list(clones.apply(list_to_counter)), collections.Counter())
+
+def get_prop_ci(p, n, z=1.96, interval=False):
+    '''Get CI for a population proportion'''
+    rad = z*math.sqrt(p*(1-p)/n)
+    if interval:
+        return (p-rad, p+rad)
+    else:
+        return rad
 

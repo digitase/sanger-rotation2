@@ -6,8 +6,9 @@
 #
 library(lazyeval)
 library(ggplot2)
-library(dtplyr)
+# library(dtplyr)
 library(dplyr)
+library(grid)
 library(data.table)
 
 source("~/packages/alakazam/R/Diversity.R")
@@ -46,7 +47,9 @@ for (p in unique(summaryDf$"patient_code")) {
     sample_div <- rarefyDiversity(rep1Db, "DAY", min_q=0, max_q=32, step_q=0.05, ci=0.95, min_n=5, nboot=200)
     # Plot a log-log (log_q=TRUE, log_d=TRUE) plot of sample diversity
     # sample_main <- paste0("Patient code: ", p, "\nSample diversity (no. clones with > 30 reads = ", sample_div@n, ")")
-    sample_main <- paste0("Patient code: ", p)
+    # sample_main <- paste0("Patient code: ", p)
+    # No sample names for poster
+    sample_main <- ""
     sample_colors <- c("0"="seagreen", "140"="steelblue")
     curve = plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Day", log_q=F, log_d=T, ylim=c(NA, 2**7.5),
                        silent = T,
@@ -54,18 +57,26 @@ for (p in unique(summaryDf$"patient_code")) {
                        )
 
     # Adjust the theming
-    curve + 
+    curve = curve + 
         labs(x="Diversity order (q)", y=expression('Diversity ('^q * D * ')')) +
         theme(
-            plot.title = element_text(size=14),
-            axis.title = element_text(size=14),
-            axis.text.x = element_text(size=14),
-            axis.text.y = element_text(size=14),
-            legend.title = element_text(size=14),
-            legend.text = element_text(size=14)
+            plot.title = element_text(size=12),
+            axis.title = element_text(size=12),
+            axis.text.x = element_text(size=11),
+            axis.text.y = element_text(size=11),
+            # legend.key.height = unit(0.3, "in"),
+            legend.title = element_text(size=12),
+            legend.text = element_text(size=12)
         )
 
-    plot(curve)
+    # Remove legend except for last plot, for poster
+    if (p != 2207) {
+        curve = curve + theme(legend.position="none")
+    }
+
+    # Try to reduce margins
+    par(mar=c(0,0,0,0), oma=c(0,0,0,0)) 
+    plot(curve, xaxs = "i", yaxs = "i")
 
 }
 dev.off()

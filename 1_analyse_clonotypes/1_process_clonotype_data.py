@@ -277,17 +277,29 @@ if 0:
 # Plot mutational freqs of clones, group by patient, hue by expansion
 #
 data = rep2
-data = data.assign(expanded=
-    data.apply(lambda x: x[analysis_level] in set(clonotypes_expanded[x['patient_code']][analysis_level]), axis=1)
+data = data.assign(
+    expanded=data.apply(lambda x: x[analysis_level] in set(clonotypes_expanded[x['patient_code']][analysis_level]), axis=1),
+    rank=scipy.stats.rankdata(data['mut_freq_vj'])
 )
 fig, ax = plt.subplots()
-sns.violinplot(x="mut_freq_vj", y="patient_code", hue="expanded", data=data, ax=ax, orient="h")
+sns.violinplot(x="mut_freq_vj", y="patient_code", hue="expanded", data=data, ax=ax, orient="h", legend=False)
 # sns.stripplot(x="mut_freq_vj", y="patient_code", hue="expanded", 
         # data=data[data[analysis_level].isin(mAb_df[analysis_level])], 
         # ax=ax, orient="h", split=True)
+ax.legend(ax.get_legend_handles_labels()[0], ["non-expanded\nclonotype", "expanded\nclonotype"], loc="upper right",
+        # bbox_to_anchor=(0., 1.02, 1., .102),
+        fontsize=12)
+#
+plt.tick_params(axis='x', which='major', labelsize=13)
+ax.set_xlim((0, 0.6))
+ax.set_xlabel("clone V-J gene mutational frequency", fontsize=14)
+#
+ax.set_yticklabels(["Patient 1\nday 140", "Patient 2\nday 140", "Patient 3\nday 140"], fontsize=14)
+ax.set_ylabel("")
+#
 # Perform mann whitney u test for difference in mean rank
-title_parts = []
-for patient_code in patient_codes:
+# title_parts = []
+for i, patient_code in enumerate(patient_codes):
     if len(clonotypes_expanded[patient_code]):
         _, p_mw = scipy.stats.mannwhitneyu(
             data.loc[(data['patient_code'] == patient_code) & ~data['expanded'], "mut_freq_vj"],
@@ -295,9 +307,21 @@ for patient_code in patient_codes:
         rank_ne, rank_e, med_ne, med_e = get_mean_ranks(
             data.loc[(data['patient_code'] == patient_code) & ~data['expanded'], "mut_freq_vj"],
             data.loc[(data['patient_code'] == patient_code) & data['expanded'], "mut_freq_vj"])
+        # Annotate with significance brackets
+        if i > 0:
+            ax.annotate(
+                'p = {:.2e}'.format(p_mw), 
+                xy=(0.48, i)
+            )
+            ax.annotate(
+                '', 
+                xy=(0.45, i-0.25), xytext=(0.45, i+0.25),
+                arrowprops={'connectionstyle':'bar', 'arrowstyle':'-', 'shrinkA':10, 'shrinkB':10, 'lw':1}
+            )
         # title_parts.append(" ".join(str(x) for x in [patient_code, p_mw, rank_ne, rank_e, med_ne, med_e]))
-        title_parts.append(" ".join(str(x) for x in ["patient: ", patient_code, "p = ", p_mw]))
-ax.set_title("\n".join(title_parts))
+        # title_parts.append(" ".join(str(x) for x in ["patient: ", patient_code, "p = ", p_mw]))
+# ax.set_title("\n".join(title_parts))
+#
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expanded_clonotypes_mut_freq.pdf")
 
 #
@@ -313,7 +337,7 @@ max_positive = max(data["p"][signif])
 min_negative = min(data["p"][~signif])
 thresh = np.mean([-np.log10(max_positive), -np.log10(min_negative)])
 #
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5), sharex=True, gridspec_kw={'height_ratios':[1, 5.5]})
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 7), sharex=True, gridspec_kw={'height_ratios':[1, 5.5]})
 # Plot same dataset on two subplots
 jitter_rad = 0.35
 g1 = sns.stripplot(y=-np.log10(data["p"]), x="patient_code",
@@ -327,10 +351,16 @@ ax1.set_ylim([215, 225])
 ax1.xaxis.set_visible(False) # Remove x axis labels from top subplot
 ax1.set_yticks([220]) # Keep tick spacing consistent between subplots
 ax1.set_ylabel("") # Remove y axis label
+ax1.legend(loc="upper left", labels=["other clonotype", "known anti-RH5 clonotype"], fontsize=14, markerscale=1.5)
+#
+ax2.set_xticklabels(["Patient 1", "Patient 2", "Patient 3"], fontsize=15) # patient names for poster
+ax2.set_xlabel("")
 ax2.set_ylim([0, 50])
+ax2.set_ylabel("-log10(p)", fontsize=15)
 ax2.legend().set_visible(False)
 # Add signif line
 ax2.axhline(y=thresh, color="black", linestyle="--")
+#
 fig.tight_layout()
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expand_p_val_manhattan.pdf")
 
@@ -348,22 +378,30 @@ props = props.loc[:, props.apply(sum).sort_values(ascending=False).index]
 # Plot stacked bars
 sbg = stackedBarGraph.StackedBarGrapher()
 fig, ax = plt.subplots(figsize=(10, 10))
-stack_colors = plt.cm.Set2(np.linspace(0, 1, props.shape[1]))
+stack_colors = plt.cm.Dark2(np.linspace(0, 1, props.shape[1]))
+gap = 0.1
 sbg.stackedBarPlot(
     ax,
     props,
     stack_colors,
     props.index, 
-    gap=0.1,
+    gap=gap,
     scale=False,
-    xlabel="Sample repertoire",
+    xlabel="",
     ylabel="Proportion of repertoire"
 )
-# Remove vertical gridlines
-ax.xaxis.grid(False) 
+#
+ax.xaxis.grid(False) # Remove vertical gridlines
+ax.set_xticklabels(["Patient 1\nday 0", "Patient 1\nday 140", "Patient 2\nday 0", "Patient 2\nday 140", "Patient 3\nday 0", "Patient 3\nday 140"]*2, fontsize=14, rotation=0)
+#
+ax.set_ylim((0, 0.05))
+start, end = ax.get_ylim()
+ax.yaxis.set_ticks(np.arange(start, end, (end-start)/5))
+ax.yaxis.set_ticklabels(np.arange(start, end, (end-start)/5), fontsize=13)
+ax.set_ylabel("Proportion of repertoire", fontsize=14)
 # add lines separating patients
-plt.axvline(x=1.5, color="w", linestyle="-")
-plt.axvline(x=3.5, color="w", linestyle="-")
+plt.axvline(x=1.5, color="darkgrey", linestyle="-")
+plt.axvline(x=3.5, color="darkgrey", linestyle="-")
 # Add legend, showing samples in which expansion occurred
 legends = []
 i = 0
@@ -371,10 +409,15 @@ for column in props.columns:
     label = column
     for patient_code in patient_codes:
         if label in set(clonotypes_expanded[patient_code][analysis_level]):
-            label = label + ", Expanded in: " + str(patient_code)
+            label = label + " ***"
     legends.append(matplotlib.patches.Patch(color=stack_colors[i], label=label))
     i+=1
-plt.legend(handles=legends, loc='best')
+# plt.legend(handles=sorted(legends, key=lambda x: x.get_label()), loc='best')
+fig.subplots_adjust(top=0.8)
+plt.legend(handles=legends, loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=3)
+#        
+# Add sigif stars to expansion in 1019
+ax.annotate('***', xy=(3., 0.02), ha='center', color="black", fontsize=20)
 #
 fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_stacked_bars.pdf")
 
@@ -382,37 +425,82 @@ fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_stacked_bars.pdf")
 # Isotype frequencies of expanded and non expanded isotypes
 #
 
-f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
-
-isotype_props_rep2_e = pd.DataFrame.from_dict(
+isotype_freqs_rep2_e = pd.DataFrame.from_dict(
         functools.reduce(
             lambda x, y: x+y, 
             map(lambda x: get_isotype_distribution(x, rep2), 
                 clonotypes_expanded_df.query("expanded").index)),
-        orient="index").apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
-
-isotype_props_rep2_ne = pd.DataFrame.from_dict(
+        orient="index")
+isotype_props_rep2_e = isotype_freqs_rep2_e.apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
+isotype_props_rep2_e = isotype_props_rep2_e.assign(
+    err=isotype_props_rep2_e["prop"].map(lambda x: get_prop_ci(x, isotype_freqs_rep2_e.sum()[0]))
+)
+#
+isotype_freqs_rep2_ne = pd.DataFrame.from_dict(
         functools.reduce(
             lambda x, y: x+y, 
             map(lambda x: get_isotype_distribution(x, rep2), 
                 clonotypes_expanded_df.query("~expanded").index)),
-        orient="index").apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
-
-isotype_props_rep1_all = pd.DataFrame.from_dict(
+        orient="index")
+isotype_props_rep2_ne = isotype_freqs_rep2_ne.apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
+isotype_props_rep2_ne = isotype_props_rep2_ne.assign(
+    err=isotype_props_rep2_ne["prop"].map(lambda x: get_prop_ci(x, isotype_freqs_rep2_ne.sum()[0]))
+)
+#
+isotype_freqs_rep1_all = pd.DataFrame.from_dict(
         functools.reduce(
             lambda x, y: x+y, 
             map(lambda x: get_isotype_distribution(x, rep1), 
                 clonotypes_expanded_df.index)),
-        orient="index").apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
-
+        orient="index")
+isotype_props_rep1_all = isotype_freqs_rep1_all.apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
+isotype_props_rep1_all = isotype_props_rep1_all.assign(
+    err=isotype_props_rep1_all["prop"].map(lambda x: get_prop_ci(x, isotype_freqs_rep1_all.sum()[0]))
+)
+#
 isotype_props_joined = pd.concat(
         [isotype_props_rep1_all, isotype_props_rep2_ne, isotype_props_rep2_e], 
         keys=["1. rep1_all", "2. rep2_not_expanded", "3. rep2_expanded"]
         ).reset_index().drop("level_1", axis=1)
-
+#
 fig, ax = plt.subplots(figsize=(10, 7))
 g = sns.barplot(x="isotype", y="prop", hue="level_0", data=isotype_props_joined.sort_values(["isotype", "level_0"]))
+#
+plt.tick_params(axis='both', which='major', labelsize=13)
+#
+ax.set_ylabel("Proportion of clones", fontsize=16)
+#
+ax.set_xlabel("Clone BCR isotype", fontsize=16)
+#
+ax.legend(ax.get_legend_handles_labels()[0], ["day 0", "day 140, expanded clonotype", "day 140, non-expanded clonotype"], loc="upper center", fontsize=13)
+#
 fig.savefig("../team115_lustre/1_analyse_clonotypes/isotype_props.pdf")
+
+def grouped_barplot(df, cat,subcat, val , err):
+    u = df[cat].unique()
+    x = np.arange(len(u))
+    subx = df[subcat].unique()
+    offsets = (np.arange(len(subx))-np.arange(len(subx)).mean())/(len(subx)+1.)
+    width = np.diff(offsets).mean()
+    for i,gr in enumerate(subx):
+        print(x+offsets[i])
+        dfg = df[df[subcat] == gr]
+        print(dfg[val].values)
+        plt.bar(x+offsets[i], dfg[val].values, width=width, 
+            label="{} {}".format(subcat, gr), yerr=dfg[err].values)
+    plt.xlabel(cat)
+    plt.ylabel(val)
+    plt.xticks(x, u)
+    plt.legend()
+    plt.show()
+grouped_barplot(isotype_props_joined, "isotype", "level_0", "prop", "err")
+
+def errplot(x, y, yerr, **kwargs):
+    ax = plt.gca()
+    data = kwargs.pop("data")
+    data.plot(x=x, y=y, yerr=yerr, kind="bar", ax=ax, **kwargs)
+
+
         
 # TODO possibility: anova by using mean isotype freq instead of summing
 
@@ -467,15 +555,25 @@ f.savefig("../team115_lustre/1_analyse_clonotypes/pie.pdf")
 # Sharing of expanded clonotypes: venn diagram
 #
 fig, ax = plt.subplots(figsize=(10, 10))
-# (100, 010, 110, 001, 101, 011, 111)
-v = matplotlib_venn.venn3(subsets=(1, 1, 0, 1, 0, 0, 0), set_labels=patient_codes)
-# for x in v.subset_labels:
-    # x.set_text("0")
+# (100, 010, 110, 001, 101, 011, 111) is the correct order of overlap codes
+# set_labels = patient_codes
+set_labels = ["Patient 1", "Patient 2", "Patient 3"]
+v = matplotlib_venn.venn3(subsets=(1, 1, 0, 1, 0, 0, 0), set_labels=set_labels)
+#
 v.get_label_by_id('100').set_text(len(clonotypes_expanded[patient_codes[0]]))
 v.get_label_by_id('010').set_text(len(clonotypes_expanded[patient_codes[1]]))
 v.get_label_by_id('001').set_text(len(clonotypes_expanded[patient_codes[2]]))
 #
-# plt.annotate(" \n ", 
+v.get_patch_by_id('100').set_color('grey')
+#
+for text in v.subset_labels:
+    if text:
+        text.set_fontsize(20)
+for text in v.set_labels:
+    if text:
+        text.set_fontsize(14)
+#
+# plt.annotate("", 
     # xy=v.get_label_by_id('100').get_position(), xytext=(0, -120), size=11,
     # ha='center', va='top', textcoords='offset points', bbox=dict(boxstyle='round,pad=0.5', fc='gray', alpha=0.1)
 # )
@@ -487,34 +585,21 @@ plt.annotate("\n".join(list(clonotypes_expanded[patient_codes[2]][analysis_level
     xy=v.get_label_by_id('001').get_position(), xytext=(0, -120), size=11,
     ha='center', va='top', textcoords='offset points', bbox=dict(boxstyle='round,pad=0.5', fc='gray', alpha=0.1)
 )
-plt.title("Venn diagram of expanded clonotypes per patient")
+# plt.title("Venn diagram of expanded clonotypes per patient")
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expanded_clonotype_venn.pdf")
 
-# TODO explore certain clonotypes
+#
+# TODO Explore certain clonotypes
+#
 
-# IGHV3-33.IGHJ4.CDR3_len16
-
-rep_freq_joined.query("clonotype == 'IGHV3-23.IGHJ4.CDR3_len16'")
-
-rep_freq_joined.query("clonotype == 'IGHV4-39.IGHJ4.CDR3_len15'")
-
-# IGHV4-39.IGHJ4.CDR3_len15
-rep_freq_joined.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
-
-# ab r5
-'IGHV1-18.IGHJ5.CDR3_len16' in set(mAb_df['clonotype'])
-
-rep_freq_joined.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
-
-clonotypes_expanded_ps_combined.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
-
-rep_freq_joined.apply(lambda x: x/sum(x)).apply(max, axis=1).sort_values().tail()
-
-rep_freq_joined.apply(lambda x: x/sum(x)).sort_values(["1019_rep2"]).tail()
-
-rep_freq_joined.apply(lambda x: x/sum(x)).sort_values(["2207_rep2"]).tail()
-
-rep_freq_joined.apply(lambda x: x/sum(x)).query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
+# expanded and known
+clonotypes_expanded_df.query("clonotype == 'IGHV1-18.IGHJ5.CDR3_len16'")
+# get mut freq
+rep1.loc[(rep1['patient_code'] == 1019) & (rep1['clonotype'] == "IGHV1-18.IGHJ5.CDR3_len16"), "mut_freq_vj"].mean()
+rep2.loc[(rep2['patient_code'] == 1019) & (rep2['clonotype'] == "IGHV1-18.IGHJ5.CDR3_len16"), "mut_freq_vj"].mean()
+# get isotypes
+get_isotype_distribution('IGHV1-18.IGHJ5.CDR3_len16', rep1.query("patient_code == 1019"))
+get_isotype_distribution('IGHV1-18.IGHJ5.CDR3_len16', rep2.query("patient_code == 1019"))
 
 # TODO Heatmap of clonotype sharing
 
