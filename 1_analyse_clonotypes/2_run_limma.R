@@ -1,4 +1,7 @@
-
+#
+# Attempt to use DE software to look for increased clonotype props
+# Ended up just using the MDS plots.
+#
 # source("https://bioconductor.org/biocLite.R")
 # biocLite("limma")
 # biocLite("edgeR")
@@ -47,20 +50,18 @@ dge.clonotype.filtered <- dge.clonotype[rowSums(dge.clonotype$counts >= 2) >= 0,
 toKeep <- colnames(dge.clonotype.filtered) %in% unlist(sampleInfo[sampleInfo[, cell_type == "MBC" & (day == 0 | day == 140)], "id", with=F])
 dge.clonotype.filtered <- dge.clonotype.filtered[, toKeep]
 
-pdf('../team115_lustre/1_analyse_clonotypes/sample_mds_edgeR.pdf', width=7, height=7)
-
+pdf('../team115_lustre/1_analyse_clonotypes/sample_mds_edgeR.pdf', width=6.5, height=6.0)
 plotMDS(dge.clonotype.filtered, 
         # labels=paste(sampleInfo$day, sampleInfo$cell_type, sep="_")[toKeep], 
         labels=paste("day_", sampleInfo$day, sep="")[toKeep], 
-        col=c("grey", "blue", "orange")[as.numeric(sampleInfo$patient_code)[toKeep]],
+        col=c("darkgrey", "blue", "orange")[as.numeric(sampleInfo$patient_code)[toKeep]],
         # col=as.numeric(sampleInfo$patient_code)[toKeep],
         gene.selection="common"
 )
-legend("bottomright", legend=c("Patient 1", "Patient 2", "Patient 3"), fill=c("darkgrey", "blue", "orange"))
+legend("top", legend=c("Patient 1", "Patient 2", "Patient 3"), fill=c("darkgrey", "blue", "orange"))
 # legend("bottomright", legend=sampleInfo$patient_code[toKeep], fill=as.numeric(sampleInfo$patient_code)[toKeep])
 #
 arrows(x0=c(-0.20, 0.4), y0=c(-0.45, 0.2), x1=c(-1.1, 0.65), y1=c(0.3, 0.55), col=c("orange", "blue"))
-
 dev.off()
 
 # Since we need to make comparisons both within and between subjects, it is necessary to treat patient_code as a random effect.

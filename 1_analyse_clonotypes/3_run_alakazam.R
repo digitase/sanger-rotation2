@@ -1,5 +1,5 @@
 #
-# Direct sourcing of alakazam modules
+# Direct sourcing of alakazam modules to generate hill curves
 #
 # Necessary due to failure of installation
 # cc1plus: error: unrecognised command line option ‘-std=c++11’
@@ -64,15 +64,16 @@ for (p in unique(summaryDf$"patient_code")) {
             axis.title = element_text(size=12),
             axis.text.x = element_text(size=11),
             axis.text.y = element_text(size=11),
-            # legend.key.height = unit(0.3, "in"),
+            legend.key.height = unit(0.3, "in"),
+            legend.background = element_rect(fill="transparent"),
             legend.title = element_text(size=12),
             legend.text = element_text(size=12)
         )
 
     # Remove legend except for last plot, for poster
-    if (p != 2207) {
-        curve = curve + theme(legend.position="none")
-    }
+    # if (p != 2207) {
+        # curve = curve + theme(legend.position="none")
+    # }
 
     # Try to reduce margins
     par(mar=c(0,0,0,0), oma=c(0,0,0,0)) 

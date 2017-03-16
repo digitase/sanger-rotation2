@@ -1,6 +1,7 @@
 
+#using igraph to generate colored network plots
 
-
+# code from isotyper:
 igraphgeneration <- function(v,dir){
   n=concat(c(dir,"Coloured_Att_",v,".txt"))
   e=concat(c(dir,"Edges_",v,".txt"))

@@ -7,6 +7,7 @@ import numpy as np
 import functools
 import collections
 import math
+import re
 
 #
 # General
@@ -138,4 +139,11 @@ def get_prop_ci(p, n, z=1.96, interval=False):
         return (p-rad, p+rad)
     else:
         return rad
+
+def natural_key(string_):
+    '''Sorting by numeric values in strings
+
+    See http://www.codinghorror.com/blog/archives/001018.html
+    ''' 
+    return [int(s) if s.isdigit() else s for s in re.split(r'(\d+)', string_)]
 

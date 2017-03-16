@@ -1,4 +1,4 @@
-
+# Generation of clonotype networks
 import math 
 import editdistance
 import itertools
@@ -90,5 +90,4 @@ Gsub.draw("../team115_lustre/1_analyse_clonotypes/clonotype_networks.png")
 
 for n in Gsub.nodes():
     n.name
-
 

@@ -158,7 +158,6 @@ patient_codes = sorted(summary_df["patient_code"].unique())
 # analysis_level = "VJ-GENE"
 analysis_level = "clonotype"
 # analysis_level = "CDR3_aa"
-
 #
 # Specific expansions of clonotypes
 #
@@ -218,59 +217,6 @@ clonotypes_expanded_df['patient_code'] = clonotypes_expanded_df['patient_code'].
 clonotypes_expanded = dict()
 for patient_code in patient_codes:
     clonotypes_expanded[patient_code] = clonotypes_expanded_df.loc[clonotypes_expanded_df["patient_code"] == patient_code].query('expanded')
-
-# TODO
-if 0:
-    #
-    # For each clonotype, get status:
-    #
-    results = pd.DataFrame({
-        "clonotype": rep_freq_joined.index 
-    })
-    results["expanded"] = results["clonotype"].apply(lambda x:
-        list(filter(lambda p: x in clonotypes_expanded[p], patient_codes))
-    )
-    naive_reps_d0 = dict(zip(
-        patient_codes,
-        (set(get_naive_rep(summary_df).query("day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
-    )) 
-    pbmc_reps_d0 = dict(zip(
-        patient_codes,
-        (set(summary_df.query("cell_type == 'PBMCs' & day == 0 & patient_code == {}".format(p))[analysis_level]) for p in patient_codes)
-    )) 
-    results["in_naive_d0"] = results["clonotype"].apply(lambda x:
-        list(filter(lambda p: x in naive_reps_d0[p], patient_codes))
-    )
-    results["in_pbmc_d0"] = results["clonotype"].apply(lambda x:
-        list(filter(lambda p: x in pbmc_reps_d0[p], patient_codes))
-    )
-    results["known_mAb_analysis_level"] = results["clonotype"].apply(lambda x:
-        list(mAb_df.loc[mAb_df[analysis_level] == x, "Ab.Name"])
-    )
-    # results["in_MBC_d0"]
-    # results["in_MBC_d140"]
-    results["isotype_rep1"] = results["clonotype"].apply(lambda x:
-        collections.Counter(
-            itertools.chain(*
-                map(
-                    lambda x: dict((i, 1/len(x)) for i in x), # Split into fractional counts for multi-isotype clones
-                    rep1.loc[rep1[analysis_level] == x, "isotypes"]
-                )
-            )
-        )
-    )
-    results["isotype_rep2"] = results["clonotype"].apply(lambda x:
-        collections.Counter(
-            itertools.chain(*
-                map(
-                    lambda x: dict((i, 1/len(x)) for i in x), # Split into fractional counts for multi-isotype clones
-                    rep2.loc[rep2[analysis_level] == x, "isotypes"]
-                )
-            )
-        )
-    )
-
-    results[results.loc[:, ["expanded"]].apply(any, axis=1)]
 
 #
 # Do expanded clonotypes have a higher mutational frequency on average?
@@ -337,7 +283,7 @@ max_positive = max(data["p"][signif])
 min_negative = min(data["p"][~signif])
 thresh = np.mean([-np.log10(max_positive), -np.log10(min_negative)])
 #
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 7), sharex=True, gridspec_kw={'height_ratios':[1, 5.5]})
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6), sharex=True, gridspec_kw={'height_ratios':[1, 5.5]})
 # Plot same dataset on two subplots
 jitter_rad = 0.35
 g1 = sns.stripplot(y=-np.log10(data["p"]), x="patient_code",
@@ -353,7 +299,12 @@ ax1.set_yticks([220]) # Keep tick spacing consistent between subplots
 ax1.set_ylabel("") # Remove y axis label
 ax1.legend(loc="upper left", labels=["other clonotype", "known anti-RH5 clonotype"], fontsize=14, markerscale=1.5)
 #
-ax2.set_xticklabels(["Patient 1", "Patient 2", "Patient 3"], fontsize=15) # patient names for poster
+ax2.set_xticklabels(
+    [
+        "Patient 1\n({} expanded)".format(len(data.loc[(data['patient_code'] == 1017) & data['expanded']])), 
+        "Patient 2\n({} expanded)".format(len(data.loc[(data['patient_code'] == 1019) & data['expanded']])), 
+        "Patient 3\n({} expanded)".format(len(data.loc[(data['patient_code'] == 2207) & data['expanded']])), 
+    ], fontsize=15) # patient names for poster
 ax2.set_xlabel("")
 ax2.set_ylim([0, 50])
 ax2.set_ylabel("-log10(p)", fontsize=15)
@@ -363,6 +314,22 @@ ax2.axhline(y=thresh, color="black", linestyle="--")
 #
 fig.tight_layout()
 fig.savefig("../team115_lustre/1_analyse_clonotypes/expand_p_val_manhattan.pdf")
+
+# TODO 
+# annotate some clonotypes in collections 2, 3, 4 (patient 2 and patient 3 other clonotype)
+# Did it manually for poster
+#
+# d = ax2.collections[2]
+# d.set_offset_position('data')
+# coords = pd.DataFrame(d.get_offsets(), columns=("x", "y"))
+# Get top 2
+# coords.sort_values("y").tail(2)
+# Get their clonotypes
+
+# TODO manual labelling
+data.loc[(data['patient_code'] == 1019) & (~data['known_mAb'].astype(bool)) & data['expanded']].sort_values("p", ascending=True)['p']
+data.loc[(data['patient_code'] == 1019) & data['known_mAb'] & data['expanded']].sort_values("p", ascending=True)['p']
+data.loc[(data['patient_code'] == 2207) & data['expanded']].sort_values("p", ascending=True)['p']
 
 #
 # Show proportion of repertoire taken up by certain clonotypes
@@ -412,9 +379,11 @@ for column in props.columns:
             label = label + " ***"
     legends.append(matplotlib.patches.Patch(color=stack_colors[i], label=label))
     i+=1
-# plt.legend(handles=sorted(legends, key=lambda x: x.get_label()), loc='best')
+#
+# Sort clonotype names in legend
+legends = sorted(legends[0], key=lambda x: natural_key(x.get_label()))
 fig.subplots_adjust(top=0.8)
-plt.legend(handles=legends, loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=3)
+plt.legend(handles=legends, loc='upper center', bbox_to_anchor=(0.5, 1.25), ncol=3, title="Known anti-RH5 clonotypes")
 #        
 # Add sigif stars to expansion in 1019
 ax.annotate('***', xy=(3., 0.02), ha='center', color="black", fontsize=20)
@@ -463,8 +432,10 @@ isotype_props_joined = pd.concat(
         keys=["1. rep1_all", "2. rep2_not_expanded", "3. rep2_expanded"]
         ).reset_index().drop("level_1", axis=1)
 #
+
 fig, ax = plt.subplots(figsize=(10, 7))
-g = sns.barplot(x="isotype", y="prop", hue="level_0", data=isotype_props_joined.sort_values(["isotype", "level_0"]))
+colors = [sns.color_palette("colorblind", 3)[1], sns.color_palette("colorblind", 3)[0], sns.color_palette("colorblind", 3)[2]]
+g = sns.barplot(x="isotype", y="prop", hue="level_0", data=isotype_props_joined.sort_values(["isotype", "level_0"]), palette=colors)
 #
 plt.tick_params(axis='both', which='major', labelsize=13)
 #
@@ -472,44 +443,24 @@ ax.set_ylabel("Proportion of clones", fontsize=16)
 #
 ax.set_xlabel("Clone BCR isotype", fontsize=16)
 #
-ax.legend(ax.get_legend_handles_labels()[0], ["day 0", "day 140, expanded clonotype", "day 140, non-expanded clonotype"], loc="upper center", fontsize=13)
+ax.legend(ax.get_legend_handles_labels()[0], ["day 0", "day 140, non-expanded clonotype", "day 140, expanded clonotype"], loc="upper center", fontsize=13)
 #
 fig.savefig("../team115_lustre/1_analyse_clonotypes/isotype_props.pdf")
 
-def grouped_barplot(df, cat,subcat, val , err):
-    u = df[cat].unique()
-    x = np.arange(len(u))
-    subx = df[subcat].unique()
-    offsets = (np.arange(len(subx))-np.arange(len(subx)).mean())/(len(subx)+1.)
-    width = np.diff(offsets).mean()
-    for i,gr in enumerate(subx):
-        print(x+offsets[i])
-        dfg = df[df[subcat] == gr]
-        print(dfg[val].values)
-        plt.bar(x+offsets[i], dfg[val].values, width=width, 
-            label="{} {}".format(subcat, gr), yerr=dfg[err].values)
-    plt.xlabel(cat)
-    plt.ylabel(val)
-    plt.xticks(x, u)
-    plt.legend()
-    plt.show()
-grouped_barplot(isotype_props_joined, "isotype", "level_0", "prop", "err")
-
-def errplot(x, y, yerr, **kwargs):
-    ax = plt.gca()
-    data = kwargs.pop("data")
-    data.plot(x=x, y=y, yerr=yerr, kind="bar", ax=ax, **kwargs)
-
-
+# TODO err bars
+# fig, ax = plt.subplots()
+# rects1 = ax.bar(np.arange(8), list(isotype_props_joined.query('level_0 == "1. rep1_all"')['prop']), 0.2, color='r', yerr=list(isotype_props_joined.query('level_0 == "1. rep1_all"')['err']))
         
 # TODO possibility: anova by using mean isotype freq instead of summing
 
 #
 # TODO below
 #
+assert(False)
 
+#
 # Isotype pies
-
+#
 # Em_clono = results[(results["expanded"].astype(bool) & np.invert(results["mutated"].astype(bool)))]
 # eM_clono = results[(results["mutated"].astype(bool) & np.invert(results["expanded"].astype(bool)))]
 # EM_clono = results[(results["mutated"].astype(bool) & (results["expanded"].astype(bool)))]
