@@ -221,6 +221,7 @@ for patient_code in patient_codes:
 #
 # Do expanded clonotypes have a higher mutational frequency on average?
 # Plot mutational freqs of clones, group by patient, hue by expansion
+# Definition of expanded here is expanded in patient.
 #
 data = rep2
 data = data.assign(
@@ -394,11 +395,16 @@ fig.savefig("../team115_lustre/1_analyse_clonotypes/clonotype_stacked_bars.pdf")
 # Isotype frequencies of expanded and non expanded isotypes
 #
 
+# Get clonotypes that are expanded in at least one patient
+clonotype_is_e = clonotypes_expanded_df.groupby(['clonotype']).apply(lambda x: any(x['expanded']))
+clonotype_e = clonotype_is_e[clonotype_is_e].index
+clonotype_ne = clonotype_is_e[~clonotype_is_e].index
+assert((set(clonotype_e) | set(clonotype_ne)) == set(clonotype_is_e.index))
+#
 isotype_freqs_rep2_e = pd.DataFrame.from_dict(
         functools.reduce(
             lambda x, y: x+y, 
-            map(lambda x: get_isotype_distribution(x, rep2), 
-                clonotypes_expanded_df.query("expanded").index)),
+            map(lambda x: get_isotype_distribution(x, rep2), clonotype_e)),
         orient="index")
 isotype_props_rep2_e = isotype_freqs_rep2_e.apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
 isotype_props_rep2_e = isotype_props_rep2_e.assign(
@@ -408,8 +414,7 @@ isotype_props_rep2_e = isotype_props_rep2_e.assign(
 isotype_freqs_rep2_ne = pd.DataFrame.from_dict(
         functools.reduce(
             lambda x, y: x+y, 
-            map(lambda x: get_isotype_distribution(x, rep2), 
-                clonotypes_expanded_df.query("~expanded").index)),
+            map(lambda x: get_isotype_distribution(x, rep2), clonotype_ne)),
         orient="index")
 isotype_props_rep2_ne = isotype_freqs_rep2_ne.apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
 isotype_props_rep2_ne = isotype_props_rep2_ne.assign(
@@ -419,8 +424,7 @@ isotype_props_rep2_ne = isotype_props_rep2_ne.assign(
 isotype_freqs_rep1_all = pd.DataFrame.from_dict(
         functools.reduce(
             lambda x, y: x+y, 
-            map(lambda x: get_isotype_distribution(x, rep1), 
-                clonotypes_expanded_df.index)),
+            map(lambda x: get_isotype_distribution(x, rep1), clonotype_e | clonotype_ne)),
         orient="index")
 isotype_props_rep1_all = isotype_freqs_rep1_all.apply(lambda x: x/sum(x)).reset_index().rename(columns={"index": "isotype", 0: "prop"})
 isotype_props_rep1_all = isotype_props_rep1_all.assign(
@@ -446,6 +450,29 @@ ax.set_xlabel("Clone BCR isotype", fontsize=16)
 ax.legend(ax.get_legend_handles_labels()[0], ["day 0", "day 140, non-expanded clonotype", "day 140, expanded clonotype"], loc="upper center", fontsize=13)
 #
 fig.savefig("../team115_lustre/1_analyse_clonotypes/isotype_props.pdf")
+
+# Code for response to Simon Draper's questions: Re: Rotation project 2 poster, 2017-04-03
+if False:
+    # Tallies for the isotypes of all expanded clonotypes
+    for clonotype, tally in zip(
+            clonotypes_expanded_df.query("expanded").index, 
+            map(lambda x: get_isotype_distribution(x, rep2), clonotypes_expanded_df.query("expanded").index)):
+        print(clonotype)
+        print(tally)
+        print(sum(tally.values()))
+
+    # Distribution of multi-isotype clones
+    print(len(rep2))
+    print(collections.Counter(rep2.n_isotypes))
+
+    #  Actual counts of IGHA1/2
+    sum(rep2.loc[rep2['clonotype'].isin(clonotype_e), 'isotypes'].apply(lambda x: any(isotype.startswith('IGHA1') for isotype in x)))
+    sum(rep2.loc[rep2['clonotype'].isin(clonotype_e), 'isotypes'].apply(lambda x: any(isotype.startswith('IGHA2') for isotype in x)))
+    #  Using the tally function
+    functools.reduce(lambda x, y: x+y, (get_isotype_distribution(clonotype, rep2) for clonotype in clonotype_e))
+    functools.reduce(lambda x, y: x+y, (get_isotype_distribution(clonotype, rep2) for clonotype in clonotype_ne))
+    #  Total number of clones that are expanded clonotypes
+    sum(rep2['clonotype'].isin(clonotype_e))
 
 # TODO err bars
 # fig, ax = plt.subplots()
