@@ -51,7 +51,7 @@ for (p in unique(summaryDf$"patient_code")) {
     # No sample names for poster
     sample_main <- ""
     sample_colors <- c("0"="seagreen", "140"="steelblue")
-    curve = plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Day", log_q=F, log_d=T, ylim=c(NA, 2**7.5),
+    curve = plotDiversityCurve(sample_div, colors=sample_colors, main_title=sample_main, legend_title="Day", log_q=F, log_d=T, ylim=c(2, 2**7.5),
                        silent = T,
                        legend.position = c(0.80, 0.80)
                        )
