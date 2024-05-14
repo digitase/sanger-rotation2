@@ -1,12 +1,15 @@
-# Experimental rotation projects for 2nd rotation 2016-17
+# Malaria vaccine development through Ig repertoire sequencing
 
-## Malaria vaccine development through Ig repertoire sequencing
+### Experimental rotation project for 2nd rotation (2016-17)
 
-### Julian Rayner and Simon Draper (Jenner Institute, Oxford)
+Repo for project-associated code.
 
-http://www.sanger.ac.uk/science/groups/rayner-group
+### Supervisors: Julian Rayner and Simon Draper
 
-http://www.jenner.ac.uk/jenner-researchers/researcher/simon-draper
+- http://www.sanger.ac.uk/science/groups/rayner-group
+- http://www.jenner.ac.uk/jenner-researchers/researcher/simon-draper
+
+## Project description
 
 The search for an effective malaria vaccine has been a long and often frustrating one. Only a single
 vaccine, RTS,S, has reached Phase III trials, which are currently ongoing in >10,000 children across
@@ -17,7 +20,7 @@ best candidates among them remains one of the central challenges of malaria vacc
 One approach is to understand how people develop immunity to malaria through natural exposure,
 which can happen provided sufficient and repeated infections. Large numbers of immunoepidemiology
 studies over the past decades have pursued this avenue, but all have had the same central problem –
-they rely on recombinant Plasmodium antigens, so will only ever identify the candidates that have
+they rely on recombinant *Plasmodium* antigens, so will only ever identify the candidates that have
 already been selected for recombinant expression.
 
 An alternative unbiased approach, which leverages nextgen sequencing technology, would be to
@@ -32,3 +35,4 @@ This rotation project has the potential to build into a PhD project using materi
 trials, as well as from experimental malaria challenge studies that will be carried out at the Wellcome
 Trust Major Overseas Programme in Kilifi, Kenya. While listed as a wet-lab project because the initial
 effort will be in library production, the project actually involves a mix of wet-lab molecular skills and
+informatics to analyse the sequencing data.
